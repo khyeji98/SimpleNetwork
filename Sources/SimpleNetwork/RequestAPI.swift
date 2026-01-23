@@ -24,6 +24,12 @@ public protocol RequestAPI {
     
     /// 기본 URL (scheme + host)
     var baseURL: String { get }
+    
+    /// HTTP 헤더 (Authorization, Content-Type 등)
+    var headers: [String: String]? { get }
+    
+    /// HTTP 요청 바디 (POST, PUT 등에서 사용)
+    var body: Encodable? { get }
 }
 
 public extension RequestAPI {
@@ -48,6 +54,9 @@ public extension RequestAPI {
 
         return urlComponents.url
     }
+    
+    var headers: [String: String]? { nil }
+    var body: Encodable? { nil }
 }
 
 // MARK: - Private Helpers

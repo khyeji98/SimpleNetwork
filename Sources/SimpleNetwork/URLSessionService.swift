@@ -38,6 +38,26 @@ public final class URLSessionService: NetworkService {
 
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = api.httpMethod.rawValue
+        
+        // 1. 헤더 설정
+        if let headers = api.headers {
+            for (key, value) in headers {
+                urlRequest.setValue(value, forHTTPHeaderField: key)
+            }
+        }
+        
+        // 2. 바디 설정
+        if let body = api.body {
+            do {
+                let encoder = JSONEncoder()
+                encoder.keyEncodingStrategy = .convertToSnakeCase // 기본값 설정 (필요시 주입받도록 개선 가능)
+                let bodyData = try encoder.encode(body)
+                urlRequest.httpBody = bodyData
+                urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            } catch {
+                throw NetworkError.encodingFailed
+            }
+        }
 
         let (data, response): (Data, URLResponse)
         do {

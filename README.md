@@ -52,6 +52,24 @@ struct GetUserAPI: RequestAPI {
 
 // Helper for when no query params are needed
 struct EmptyParams: Encodable {}
+
+struct CreateUserAPI: RequestAPI {
+    typealias QueryParams = EmptyParams
+    typealias Response = User
+    
+    let newUser: User
+    
+    var baseURL: String { "https://api.example.com" }
+    var path: String { "/users" }
+    var httpMethod: HTTPMethod { .post }
+    var queryParams: QueryParams? { nil }
+    
+    var headers: [String : String]? {
+        ["Authorization": "Bearer my-token"]
+    }
+    
+    var body: Encodable? { newUser }
+}
 ```
 
 ### 2. Make a Request
@@ -63,8 +81,14 @@ let networkService = URLSessionService()
 
 Task {
     do {
+        // GET Request
         let user = try await networkService.request(GetUserAPI())
         print("User: \(user.name)")
+        
+        // POST Request
+        let newUser = User(id: 2, name: "New User")
+        let createdUser = try await networkService.request(CreateUserAPI(newUser: newUser))
+        print("Created: \(createdUser.name)")
     } catch {
         print("Error: \(error)")
     }
