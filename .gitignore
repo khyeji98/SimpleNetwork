@@ -5,3 +5,9 @@
 /xcuserdata
 *.xcodeproj
 *.xcworkspace
+node_modules/
+package-lock.json
+
+# Claude
+CLAUDE.md
+.claude/
