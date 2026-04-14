@@ -41,7 +41,7 @@ public final class URLSessionService: NetworkService {
         
         // 1. 헤더 설정
         if let headers = api.headers {
-            for (key, value) in headers {
+            for (key, value) in headers.dictionary {
                 urlRequest.setValue(value, forHTTPHeaderField: key)
             }
         }
@@ -53,7 +53,9 @@ public final class URLSessionService: NetworkService {
                 encoder.keyEncodingStrategy = .convertToSnakeCase // 기본값 설정 (필요시 주입받도록 개선 가능)
                 let bodyData = try encoder.encode(body)
                 urlRequest.httpBody = bodyData
-                urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                if urlRequest.value(forHTTPHeaderField: "Content-Type") == nil {
+                    urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                }
             } catch {
                 throw NetworkError.encodingFailed
             }
