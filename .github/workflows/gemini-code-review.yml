@@ -42,6 +42,47 @@ jobs:
             echo "skip_review=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Parse Diff for Valid Lines
+        if: steps.get_diff.outputs.skip_review == 'false'
+        uses: actions/github-script@v7
+        id: parse_diff
+        with:
+          script: |
+            const fs = require("fs");
+            const diff = fs.readFileSync("diff.txt", "utf8");
+
+            // diff를 파싱하여 파일별 유효한 라인 번호 맵 생성
+            const validLines = {};
+            let currentFile = null;
+
+            for (const line of diff.split("\n")) {
+              // 새 파일 시작: diff --git a/path b/path
+              if (line.startsWith("diff --git")) {
+                const match = line.match(/b\/(.+)$/);
+                if (match) currentFile = match[1];
+                continue;
+              }
+              // hunk 헤더: @@ -old,count +new,count @@
+              if (line.startsWith("@@") && currentFile) {
+                const match = line.match(/@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
+                if (match) {
+                  const start = parseInt(match[1]);
+                  const count = match[2] ? parseInt(match[2]) : 1;
+                  if (!validLines[currentFile]) validLines[currentFile] = new Set();
+                  for (let i = start; i < start + count; i++) {
+                    validLines[currentFile].add(i);
+                  }
+                }
+              }
+            }
+
+            // Set을 배열로 변환하여 JSON 직렬화
+            const serializable = {};
+            for (const [file, lines] of Object.entries(validLines)) {
+              serializable[file] = [...lines].sort((a, b) => a - b);
+            }
+            fs.writeFileSync("valid_lines.json", JSON.stringify(serializable));
+
       - name: Run Gemini Review
         if: steps.get_diff.outputs.skip_review == 'false'
         uses: actions/github-script@v7
@@ -49,50 +90,125 @@ jobs:
           script: |
             const fs = require("fs");
             const diff_output = fs.readFileSync("diff.txt", "utf8");
-            
-            // 💡 퀄리티: PR 제목과 내용을 가져와 AI에게 맥락 제공
+
             const pr_title = context.payload.pull_request.title;
             const pr_body = context.payload.pull_request.body || "내용 없음";
-            
+
             const { GoogleGenerativeAI } = require("@google/generative-ai");
             const genAI = new GoogleGenerativeAI("${{ secrets.GEMINI_API_KEY }}");
-            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-            
-            // 💡 프롬프트 엔지니어링: 아키텍처, 제안 문법, CS 질문 유도
+            const model = genAI.getGenerativeModel({
+              model: "gemini-2.5-flash",
+              generationConfig: {
+                responseMimeType: "application/json",
+              },
+            });
+
             const prompt = `You are a senior iOS software engineer performing a code review.
-            
+
             [PR Context]
             Title: ${pr_title}
             Description: ${pr_body}
-            
+
             [Review Criteria]
             1. Architecture: Evaluate based on MVVM and Clean Architecture principles (e.g., separation of concerns, dependency injection).
             2. Code Quality: Focus on protocol design, value vs reference types, thread safety, and ARC/memory management.
-            3. Actionable Feedback: If code improvements are needed, you MUST provide specific Swift code snippets using GitHub's \`\`\`suggestion syntax.
+            3. Actionable Feedback: If code improvements are needed, you MUST provide specific Swift code snippets using GitHub suggestion syntax.
             4. CS Insight: Briefly suggest one relevant CS interview question based on the code (e.g., if collections are used, mention the memory structure difference between Array and LinkedList).
-            
-            Ignore comments and formatting. Write in Korean using Markdown without intro/outro.
-            
+
+            [Severity Prefix]
+            Each comment body MUST start with a severity emoji prefix:
+            - 🔴 Critical: bugs, crashes, security vulnerabilities, data loss risks
+            - 🟡 Warning: performance issues, design concerns, maintainability problems
+            - 🟢 Suggestion: minor improvements, style preferences, nice-to-have changes
+
+            Ignore comments and formatting. Write all review comments in Korean.
+
+            IMPORTANT: The "line" field must be the NEW file line number from the diff hunk header (the + side).
+            For example, if the diff shows "@@ -10,5 +20,8 @@" and the issue is on the 3rd line of that hunk, the line number is 22.
+
+            Respond ONLY with a JSON object in this exact format:
+            {
+              "summary": "전체 리뷰 요약 (한국어, 마크다운)",
+              "comments": [
+                {
+                  "path": "file path relative to repo root (from the b/ prefix in diff)",
+                  "line": <new file line number from diff>,
+                  "body": "🔴/🟡/🟢 리뷰 코멘트 (한국어, 마크다운. 개선이 필요하면 \`\`\`suggestion 블록 포함)"
+                }
+              ]
+            }
+
+            If no issues are found, return {"summary": "...", "comments": []}.
+
             <git diff>
             ${diff_output}
             </git diff>`;
-            
+
             const result = await model.generateContent(prompt);
             const text = result.response.text();
-            fs.writeFileSync("review_result.txt", text);
+            fs.writeFileSync("review_result.json", text);
 
-      - name: Comment on Pull Request
+      - name: Post Inline Review Comments
         if: steps.get_diff.outputs.skip_review == 'false'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require("fs");
-            if (fs.existsSync("review_result.txt")) {
-              const body = fs.readFileSync("review_result.txt", "utf8");
+            const raw = fs.readFileSync("review_result.json", "utf8");
+            const validLinesMap = JSON.parse(fs.readFileSync("valid_lines.json", "utf8"));
+
+            let review;
+            try {
+              review = JSON.parse(raw);
+            } catch (e) {
+              // JSON 파싱 실패 시 단일 코멘트로 fallback
+              console.log("JSON parse failed, falling back to single comment");
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.payload.pull_request.number,
-                body: body
+                body: raw,
+              });
+              return;
+            }
+
+            // 유효한 라인 번호만 필터링
+            const validComments = (review.comments || []).filter((c) => {
+              const fileLines = validLinesMap[c.path];
+              if (!fileLines) {
+                console.log(`Skipping comment: file not in diff - ${c.path}`);
+                return false;
+              }
+              if (!fileLines.includes(c.line)) {
+                console.log(`Skipping comment: line ${c.line} not in diff hunk for ${c.path}`);
+                return false;
+              }
+              return true;
+            });
+
+            const reviewComments = validComments.map((c) => ({
+              path: c.path,
+              line: c.line,
+              side: "RIGHT",
+              body: c.body,
+            }));
+
+            if (reviewComments.length > 0) {
+              // 인라인 코멘트가 있으면 리뷰로 게시
+              await github.rest.pulls.createReview({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.pull_request.number,
+                event: "COMMENT",
+                body: review.summary || "",
+                comments: reviewComments,
+              });
+            } else if (review.summary) {
+              // 인라인 코멘트 없이 요약만 있으면 단일 코멘트로 게시
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: review.summary,
               });
             }
