@@ -31,18 +31,16 @@ jobs:
         run: |
           git fetch origin "${{ github.event.pull_request.base.ref }}"
           git fetch origin "${{ github.event.pull_request.head.ref }}"
-          
-          # 💡 최적화: .swift 파일만 필터링하여 diff 추출 (불필요한 파일 제외)
+
           git diff "origin/${{ github.event.pull_request.base.ref }}"..."origin/${{ github.event.pull_request.head.ref }}" -- "*.swift" > diff.txt
-          
-          # Swift 파일 변경사항이 없으면 워크플로 중단
+
           if [ ! -s diff.txt ]; then
             echo "skip_review=true" >> $GITHUB_OUTPUT
           else
             echo "skip_review=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Parse Diff for Valid Lines
+      - name: Parse Diff for Valid Lines and Annotate
         if: steps.get_diff.outputs.skip_review == 'false'
         uses: actions/github-script@v7
         id: parse_diff
@@ -51,37 +49,67 @@ jobs:
             const fs = require("fs");
             const diff = fs.readFileSync("diff.txt", "utf8");
 
-            // diff를 파싱하여 파일별 유효한 라인 번호 맵 생성
             const validLines = {};
+            const lineContentMap = {};
+            const annotatedLines = [];
+
             let currentFile = null;
+            let lineNum = 0;
 
             for (const line of diff.split("\n")) {
-              // 새 파일 시작: diff --git a/path b/path
               if (line.startsWith("diff --git")) {
                 const match = line.match(/b\/(.+)$/);
                 if (match) currentFile = match[1];
+                annotatedLines.push(line);
                 continue;
               }
-              // hunk 헤더: @@ -old,count +new,count @@
+
+              if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("index ")) {
+                annotatedLines.push(line);
+                continue;
+              }
+
               if (line.startsWith("@@") && currentFile) {
                 const match = line.match(/@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
-                if (match) {
-                  const start = parseInt(match[1]);
-                  const count = match[2] ? parseInt(match[2]) : 1;
-                  if (!validLines[currentFile]) validLines[currentFile] = new Set();
-                  for (let i = start; i < start + count; i++) {
-                    validLines[currentFile].add(i);
-                  }
-                }
+                if (match) lineNum = parseInt(match[1]);
+                annotatedLines.push(line);
+                continue;
+              }
+
+              if (!currentFile) {
+                annotatedLines.push(line);
+                continue;
+              }
+
+              if (line.startsWith("+") && !line.startsWith("+++")) {
+                // Added line: valid comment target
+                if (!validLines[currentFile]) validLines[currentFile] = new Set();
+                validLines[currentFile].add(lineNum);
+
+                if (!lineContentMap[currentFile]) lineContentMap[currentFile] = {};
+                lineContentMap[currentFile][lineNum] = line.substring(1).trim();
+
+                annotatedLines.push(`[LINE ${lineNum}] ${line}`);
+                lineNum++;
+              } else if (line.startsWith("-") && !line.startsWith("---")) {
+                // Deleted line: no line number increment
+                annotatedLines.push(`[DEL] ${line}`);
+              } else {
+                // Context line: increment but not valid
+                annotatedLines.push(`[CTX ${lineNum}] ${line}`);
+                lineNum++;
               }
             }
 
-            // Set을 배열로 변환하여 JSON 직렬화
+            // Serialize validLines (Set -> Array)
             const serializable = {};
             for (const [file, lines] of Object.entries(validLines)) {
               serializable[file] = [...lines].sort((a, b) => a - b);
             }
+
             fs.writeFileSync("valid_lines.json", JSON.stringify(serializable));
+            fs.writeFileSync("line_content_map.json", JSON.stringify(lineContentMap));
+            fs.writeFileSync("annotated_diff.txt", annotatedLines.join("\n"));
 
       - name: Run Gemini Review
         if: steps.get_diff.outputs.skip_review == 'false'
@@ -89,7 +117,7 @@ jobs:
         with:
           script: |
             const fs = require("fs");
-            const diff_output = fs.readFileSync("diff.txt", "utf8");
+            const annotated_diff = fs.readFileSync("annotated_diff.txt", "utf8");
 
             const pr_title = context.payload.pull_request.title;
             const pr_body = context.payload.pull_request.body || "내용 없음";
@@ -105,6 +133,12 @@ jobs:
 
             const prompt = `You are a senior iOS software engineer performing a code review.
 
+            CRITICAL LINE NUMBER RULES (MUST FOLLOW):
+            - Each diff line is annotated with [LINE N] for added lines or [CTX N] for context lines.
+            - You MUST only comment on [LINE N] lines (added/modified code). NEVER comment on [CTX] or [DEL] lines.
+            - Use the EXACT number N shown in the [LINE N] annotation. Do NOT compute line numbers yourself.
+            - The "code_snippet" field must contain the actual code from that [LINE N] line.
+
             [PR Context]
             Title: ${pr_title}
             Description: ${pr_body}
@@ -113,7 +147,6 @@ jobs:
             1. Architecture: Evaluate based on MVVM and Clean Architecture principles (e.g., separation of concerns, dependency injection).
             2. Code Quality: Focus on protocol design, value vs reference types, thread safety, and ARC/memory management.
             3. Actionable Feedback: If code improvements are needed, you MUST provide specific Swift code snippets using GitHub suggestion syntax.
-            4. CS Insight: Briefly suggest one relevant CS interview question based on the code (e.g., if collections are used, mention the memory structure difference between Array and LinkedList).
 
             [Severity Prefix]
             Each comment body MUST start with a severity emoji prefix:
@@ -123,8 +156,28 @@ jobs:
 
             Ignore comments and formatting. Write all review comments in Korean.
 
-            IMPORTANT: The "line" field must be the NEW file line number from the diff hunk header (the + side).
-            For example, if the diff shows "@@ -10,5 +20,8 @@" and the issue is on the 3rd line of that hunk, the line number is 22.
+            [Example]
+            Given this annotated diff:
+            \`\`\`
+            diff --git a/Sources/Example.swift b/Sources/Example.swift
+            @@ -10,3 +10,5 @@
+            [CTX 10]  import Foundation
+            [LINE 11] +var timeout: Int = -1
+            [LINE 12] +var retryCount: Int = 0
+            \`\`\`
+
+            Correct response:
+            {
+              "summary": "타임아웃 값이 음수입니다.",
+              "comments": [
+                {
+                  "path": "Sources/Example.swift",
+                  "line": 11,
+                  "code_snippet": "var timeout: Int = -1",
+                  "body": "🟡 Warning: 타임아웃 기본값이 -1입니다.\\n\\n음수 타임아웃은 예기치 않은 동작을 유발할 수 있습니다.\\n\\n\\\`\\\`\\\`suggestion\\nvar timeout: Int = 30\\n\\\`\\\`\\\`"
+                }
+              ]
+            }
 
             Respond ONLY with a JSON object in this exact format:
             {
@@ -132,7 +185,8 @@ jobs:
               "comments": [
                 {
                   "path": "file path relative to repo root (from the b/ prefix in diff)",
-                  "line": <new file line number from diff>,
+                  "line": <exact N from [LINE N] annotation>,
+                  "code_snippet": "the actual code content from that line",
                   "body": "🔴/🟡/🟢 리뷰 코멘트 (한국어, 마크다운. 개선이 필요하면 \`\`\`suggestion 블록 포함)"
                 }
               ]
@@ -140,9 +194,9 @@ jobs:
 
             If no issues are found, return {"summary": "...", "comments": []}.
 
-            <git diff>
-            ${diff_output}
-            </git diff>`;
+            <annotated_diff>
+            ${annotated_diff}
+            </annotated_diff>`;
 
             const result = await model.generateContent(prompt);
             const text = result.response.text();
@@ -156,12 +210,12 @@ jobs:
             const fs = require("fs");
             const raw = fs.readFileSync("review_result.json", "utf8");
             const validLinesMap = JSON.parse(fs.readFileSync("valid_lines.json", "utf8"));
+            const lineContentMap = JSON.parse(fs.readFileSync("line_content_map.json", "utf8"));
 
             let review;
             try {
               review = JSON.parse(raw);
             } catch (e) {
-              // JSON 파싱 실패 시 단일 코멘트로 fallback
               console.log("JSON parse failed, falling back to single comment");
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
@@ -172,29 +226,65 @@ jobs:
               return;
             }
 
-            // 유효한 라인 번호만 필터링
-            const validComments = (review.comments || []).filter((c) => {
-              const fileLines = validLinesMap[c.path];
-              if (!fileLines) {
-                console.log(`Skipping comment: file not in diff - ${c.path}`);
-                return false;
+            // Snap to nearest valid line with content matching
+            function snapToValidLine(comment) {
+              const fileLines = validLinesMap[comment.path];
+              if (!fileLines || fileLines.length === 0) {
+                console.log(`Dropping comment: file not in diff - ${comment.path}`);
+                return null;
               }
-              if (!fileLines.includes(c.line)) {
-                console.log(`Skipping comment: line ${c.line} not in diff hunk for ${c.path}`);
-                return false;
-              }
-              return true;
-            });
 
-            const reviewComments = validComments.map((c) => ({
-              path: c.path,
-              line: c.line,
-              side: "RIGHT",
-              body: c.body,
-            }));
+              // 1. Exact match
+              if (fileLines.includes(comment.line)) return comment.line;
+
+              // 2. Content-based matching using code_snippet
+              const fileContent = lineContentMap[comment.path] || {};
+              if (comment.code_snippet) {
+                const snippet = comment.code_snippet.trim();
+                for (const validLine of fileLines) {
+                  const content = fileContent[validLine] || "";
+                  if (content.includes(snippet) || snippet.includes(content)) {
+                    console.log(`Content-matched comment from line ${comment.line} to ${validLine} for ${comment.path}`);
+                    return validLine;
+                  }
+                }
+              }
+
+              // 3. Nearest valid line within ±5 lines
+              const THRESHOLD = 5;
+              let bestLine = null;
+              let bestDist = THRESHOLD + 1;
+              for (const validLine of fileLines) {
+                const dist = Math.abs(validLine - comment.line);
+                if (dist < bestDist) {
+                  bestDist = dist;
+                  bestLine = validLine;
+                }
+              }
+
+              if (bestLine !== null) {
+                console.log(`Snapped comment from line ${comment.line} to ${bestLine} (dist=${bestDist}) for ${comment.path}`);
+                return bestLine;
+              }
+
+              console.log(`Dropping comment: no valid line within ±${THRESHOLD} of line ${comment.line} for ${comment.path}`);
+              return null;
+            }
+
+            const reviewComments = (review.comments || [])
+              .map((c) => {
+                const snappedLine = snapToValidLine(c);
+                if (snappedLine === null) return null;
+                return {
+                  path: c.path,
+                  line: snappedLine,
+                  side: "RIGHT",
+                  body: c.body,
+                };
+              })
+              .filter(Boolean);
 
             if (reviewComments.length > 0) {
-              // 인라인 코멘트가 있으면 리뷰로 게시
               await github.rest.pulls.createReview({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -204,7 +294,6 @@ jobs:
                 comments: reviewComments,
               });
             } else if (review.summary) {
-              // 인라인 코멘트 없이 요약만 있으면 단일 코멘트로 게시
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
