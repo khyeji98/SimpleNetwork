@@ -9,7 +9,7 @@ import Foundation
 
 /// 쿼리 파라미터를 정의하는 프로토콜입니다.
 /// 구조체의 프로퍼티만 정의하면 라이브러리가 자동으로 URLQueryItem으로 변환합니다.
-public protocol QueryParameter: Encodable {}
+public protocol QueryParameter: Encodable, Sendable {}
 
 public extension QueryParameter {
     /// 프로퍼티를 URLQueryItem 배열로 자동 변환합니다.

@@ -8,14 +8,14 @@
 import Foundation
 
 /// 네트워크 요청 중 발생할 수 있는 에러를 정의합니다.
-public enum NetworkError: Error {
+public enum NetworkError: Error, Sendable {
     case invalidURL
     case invalidResponse
     case encodingFailed
     case noData
-    case decodingFailed(Error)
+    case decodingFailed(any Error & Sendable)
     case httpError(statusCode: Int)
-    case unknown(Error)
+    case unknown(any Error & Sendable)
 }
 
 extension NetworkError: LocalizedError {

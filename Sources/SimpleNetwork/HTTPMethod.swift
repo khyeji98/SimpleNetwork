@@ -8,7 +8,7 @@
 import Foundation
 
 /// HTTP 요청 메서드를 정의합니다.
-public enum HTTPMethod: String {
+public enum HTTPMethod: String, Sendable {
     case get = "GET"
     case post = "POST"
     case put = "PUT"
