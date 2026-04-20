@@ -69,6 +69,24 @@ final class QueryParameterTests: XCTestCase {
         XCTAssertEqual(names, names.sorted())
     }
 
+    // MARK: - 중첩 구조 제외
+
+    func test_QueryParameter_배열_프로퍼티는_queryItems에서_제외() {
+        let query = ArrayQuery(keyword: "swift", tags: ["ios", "spm"])
+        let names = query.queryItems.map { $0.name }
+
+        XCTAssertTrue(names.contains("keyword"))
+        XCTAssertFalse(names.contains("tags"))
+    }
+
+    func test_QueryParameter_딕셔너리_프로퍼티는_queryItems에서_제외() {
+        let query = NestedQuery(keyword: "swift", filters: ["lang": "ko"])
+        let names = query.queryItems.map { $0.name }
+
+        XCTAssertTrue(names.contains("keyword"))
+        XCTAssertFalse(names.contains("filters"))
+    }
+
     // MARK: - EmptyQuery
 
     func test_EmptyQuery_빈_queryItems() {
@@ -97,4 +115,14 @@ private struct BoolQuery: QueryParameter {
 private struct OptionalQuery: QueryParameter {
     let keyword: String
     let sort: String?
+}
+
+private struct ArrayQuery: QueryParameter {
+    let keyword: String
+    let tags: [String]
+}
+
+private struct NestedQuery: QueryParameter {
+    let keyword: String
+    let filters: [String: String]
 }

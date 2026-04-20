@@ -25,6 +25,10 @@ public extension QueryParameter {
             if value is NSNull {
                 return nil
             }
+            // 플랫 구조만 지원: 중첩 객체/배열은 제외하여 의도치 않은 문자열 직렬화 방지
+            if value is [Any] || value is [String: Any] {
+                return nil
+            }
             let nsValue = value as AnyObject
             if nsValue === kCFBooleanTrue {
                 return URLQueryItem(name: key, value: "true")
