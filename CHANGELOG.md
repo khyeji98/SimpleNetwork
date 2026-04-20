@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0](https://github.com/khyeji98/SimpleNetwork/compare/1.0.0...v1.1.0) (2026-04-20)
+
+
+### Features
+
+* add QueryParameter protocol with automatic conversion ([6b7a63a](https://github.com/khyeji98/SimpleNetwork/commit/6b7a63ab8c5c94f556eaf5c65c26fb8b326b0387))
+* add type-safe HTTPHeader and HTTPHeaders ([bd7898d](https://github.com/khyeji98/SimpleNetwork/commit/bd7898d4cbd3475165ef4b90b9d4c7939ade3409))
+* apply HTTPHeaders and QueryParameter to RequestAPI ([ae2b779](https://github.com/khyeji98/SimpleNetwork/commit/ae2b779cf95457785ceb8d00cbc210d6cf39709b))
+* RequestAPI 타입 안전성 강화 (HTTPHeaders, QueryParameter) ([61cac75](https://github.com/khyeji98/SimpleNetwork/commit/61cac758a562a4c6a8f794b442f879d531ebe431))
+
+
+### Bug Fixes
+
+* 중첩 객체/배열을 QueryParameter에서 제외 ([4e51369](https://github.com/khyeji98/SimpleNetwork/commit/4e5136915368bb64ec0b4c12067b2238379c9400))
+
 ## [Unreleased]
 
 ## [1.0.0] - 2026-02-22
