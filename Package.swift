@@ -18,11 +18,17 @@ let package = Package(
     targets: [
         .target(
             name: "SimpleNetwork",
-            dependencies: []
+            dependencies: [],
+            swiftSettings: [
+                .enableExperimentalFeature("StrictConcurrency")
+            ]
         ),
         .testTarget(
             name: "SimpleNetworkTests",
-            dependencies: ["SimpleNetwork"]
+            dependencies: ["SimpleNetwork"],
+            swiftSettings: [
+                .enableExperimentalFeature("StrictConcurrency")
+            ]
         ),
     ]
 )

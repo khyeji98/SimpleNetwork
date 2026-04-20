@@ -8,7 +8,11 @@
 import Foundation
 
 /// URLSession을 사용하여 네트워크 요청을 수행하는 구현체입니다.
-public final class URLSessionService: NetworkService {
+///
+/// 모든 저장 프로퍼티가 `let`이며 내부 상태를 변경하지 않으므로 동시성 안전합니다.
+/// `JSONDecoder`가 non-Sendable 클래스이지만 인스턴스를 외부와 공유하지 않으므로
+/// `@unchecked Sendable`로 선언합니다.
+public final class URLSessionService: NetworkService, @unchecked Sendable {
     private let session: URLSession
     private let decoder: JSONDecoder
 

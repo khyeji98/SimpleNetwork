@@ -9,9 +9,9 @@ import Foundation
 
 /// 네트워크 요청을 정의하는 프로토콜입니다.
 /// 각 API 요청은 이 프로토콜을 채택하여 구현합니다.
-public protocol RequestAPI {
+public protocol RequestAPI: Sendable {
     associatedtype Query: QueryParameter
-    associatedtype Response: Decodable
+    associatedtype Response: Decodable & Sendable
 
     /// HTTP 요청 메서드
     var httpMethod: HTTPMethod { get }
@@ -29,7 +29,7 @@ public protocol RequestAPI {
     var headers: HTTPHeaders? { get }
 
     /// HTTP 요청 바디 (POST, PUT 등에서 사용)
-    var body: Encodable? { get }
+    var body: (any Encodable & Sendable)? { get }
 }
 
 public extension RequestAPI {
@@ -52,5 +52,5 @@ public extension RequestAPI {
 
     var query: Query? { nil }
     var headers: HTTPHeaders? { nil }
-    var body: Encodable? { nil }
+    var body: (any Encodable & Sendable)? { nil }
 }

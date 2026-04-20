@@ -8,6 +8,6 @@
 import Foundation
 
 /// 네트워크 요청을 수행하는 서비스 프로토콜입니다.
-public protocol NetworkService {
+public protocol NetworkService: Sendable {
     func request<API: RequestAPI>(_ api: API) async throws -> API.Response
 }
