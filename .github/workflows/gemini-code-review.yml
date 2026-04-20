@@ -131,7 +131,12 @@ jobs:
               },
             });
 
-            const prompt = `You are a senior iOS software engineer performing a code review.
+            const prompt = `You are a senior iOS software engineer performing a code review for a Swift-based Networking Library.
+
+            [Tone and Style Guidelines]
+            - Do NOT include unnecessary praise, greetings, or overly verbose explanations.
+            - Do NOT provide unsolicited CS insights (컴퓨터 과학적 통찰) or related interview questions.
+            - Provide concise, objective, and well-organized feedback suitable for immediate practical use.
 
             CRITICAL LINE NUMBER RULES (MUST FOLLOW):
             - Each diff line is annotated with [LINE N] for added lines or [CTX N] for context lines.
@@ -144,37 +149,42 @@ jobs:
             Description: ${pr_body}
 
             [Review Criteria]
-            1. Architecture: Evaluate based on MVVM and Clean Architecture principles (e.g., separation of concerns, dependency injection).
-            2. Code Quality: Focus on protocol design, value vs reference types, thread safety, and ARC/memory management.
-            3. Actionable Feedback: If code improvements are needed, you MUST provide specific Swift code snippets using GitHub suggestion syntax.
+            1. Architecture & Abstraction: Evaluate based on Protocol-Oriented Programming. Ensure API specifications are well-separated from the communication logic.
+            2. Swift API Design Guidelines: Ensure public interfaces follow Apple's official Swift API Design Guidelines. Focus on clarity at the point of use, proper argument labels, and omitting needless words.
+            3. Concurrency & Networking: Check for correct usage of async/await or URLSession closures, proper background thread handling, and robust error mapping.
+            4. Code Quality: Focus on memory management (e.g., retain cycles in closures), thread safety, and overall Swift best practices.
+            5. Actionable Feedback: If code improvements are needed, you MUST provide specific Swift code snippets using GitHub suggestion syntax.
 
             [Severity Prefix]
-            Each comment body MUST start with a severity emoji prefix:
-            - 🔴 Critical: bugs, crashes, security vulnerabilities, data loss risks
-            - 🟡 Warning: performance issues, design concerns, maintainability problems
-            - 🟢 Suggestion: minor improvements, style preferences, nice-to-have changes
+            Each comment body MUST start with a severity tag on its own line, then the actual comment content after a blank line:
+            - 🔴 [P1] Critical: thread-blocking tasks on Main thread, severe memory leaks (retain cycles), app crashes
+            - 🟠 [P2] Major: improper error handling, broken protocol abstraction, severe concurrency issues
+            - 🟡 [P3] Minor: Swift API Guideline violations in public APIs, inefficient URL request configurations
+            - 🔵 [P4] Readability: internal naming conventions, code structure improvements, omitting needless words
+            - ⚪ [P5] Nitpick: typos, minor spacing issues
+
+            Format: "🔴 **[P1] Critical**\\n\\nActual comment content here..."
 
             Ignore comments and formatting. Write all review comments in Korean.
 
             [Example]
             Given this annotated diff:
             \`\`\`
-            diff --git a/Sources/Example.swift b/Sources/Example.swift
+            diff --git a/Sources/NetworkManager.swift b/Sources/NetworkManager.swift
             @@ -10,3 +10,5 @@
-            [CTX 10]  import Foundation
-            [LINE 11] +var timeout: Int = -1
-            [LINE 12] +var retryCount: Int = 0
+            [CTX 10]  public class NetworkManager {
+            [LINE 11] +    public func performNetworkRequest(request: URLRequest) async throws -> Data
             \`\`\`
 
             Correct response:
             {
-              "summary": "타임아웃 값이 음수입니다.",
+              "summary": "Swift API 디자인 가이드라인 준수가 필요합니다.",
               "comments": [
                 {
-                  "path": "Sources/Example.swift",
+                  "path": "Sources/NetworkManager.swift",
                   "line": 11,
-                  "code_snippet": "var timeout: Int = -1",
-                  "body": "🟡 Warning: 타임아웃 기본값이 -1입니다.\\n\\n음수 타임아웃은 예기치 않은 동작을 유발할 수 있습니다.\\n\\n\\\`\\\`\\\`suggestion\\nvar timeout: Int = 30\\n\\\`\\\`\\\`"
+                  "code_snippet": "public func performNetworkRequest(request: URLRequest) async throws -> Data",
+                  "body": "🟡 **[P3] Minor**\\n\\nSwift API 가이드라인에 따라 호출부의 가독성을 높이고 불필요한 단어를 생략하는 것이 좋습니다. 'performNetworkRequest(request:)' 대신 'request(_:)' 또는 'fetch(_:)' 형태를 권장합니다.\\n\\n\\\`\\\`\\\`suggestion\\n    public func request(_ request: URLRequest) async throws -> Data\\n\\\`\\\`\\\`"
                 }
               ]
             }
@@ -187,7 +197,7 @@ jobs:
                   "path": "file path relative to repo root (from the b/ prefix in diff)",
                   "line": <exact N from [LINE N] annotation>,
                   "code_snippet": "the actual code content from that line",
-                  "body": "🔴/🟡/🟢 리뷰 코멘트 (한국어, 마크다운. 개선이 필요하면 \`\`\`suggestion 블록 포함)"
+                  "body": "🔴/🟠/🟡/🔵/⚪ **[P1~P5] Label**\\n\\n리뷰 코멘트 (한국어, 마크다운. 개선이 필요하면 \`\`\`suggestion 블록 포함)"
                 }
               ]
             }
