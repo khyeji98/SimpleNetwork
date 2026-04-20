@@ -1,0 +1,10 @@
+{
+  "name": "simple-network",
+  "version": "1.0.0",
+  "description": "A lightweight Swift networking library",
+  "private": true,
+  "devDependencies": {
+    "@commitlint/cli": "^19.0.0",
+    "@commitlint/config-conventional": "^19.0.0"
+  }
+}
