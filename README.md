@@ -118,6 +118,48 @@ Task {
 }
 ```
 
+### 4. Download a File
+
+Conform to `DownloadAPI` and consume the stream returned by `download(_:)`.
+
+```swift
+struct DownloadFirmwareAPI: DownloadAPI {
+    typealias Query = EmptyQuery
+
+    var baseURL: String { "https://cdn.example.com" }
+    var path: String { "/firmware/v1.bin" }
+    let destination: URL
+}
+
+let networkService = URLSessionService()
+let destination = FileManager.default.temporaryDirectory
+    .appendingPathComponent("firmware.bin")
+
+Task {
+    do {
+        let api = DownloadFirmwareAPI(destination: destination)
+        for try await event in networkService.download(api) {
+            switch event {
+            case .progress(let progress):
+                if let fraction = progress.fractionCompleted {
+                    print("\(Int(fraction * 100))% — \(progress.bytesTransferred) bytes")
+                } else {
+                    print("downloaded \(progress.bytesTransferred) bytes")
+                }
+
+            case .completed(let url):
+                print("saved to \(url)")
+            }
+        }
+    } catch {
+        print("Download failed: \(error)")
+    }
+}
+```
+
+- `destination`의 상위 디렉터리는 호출자가 먼저 생성해야 합니다. 기존 파일이 있으면 덮어씁니다.
+- `Task`가 취소되면 `onTermination`이 부분 파일을 정리합니다. `for try await` 소비자는 필요 시 `try Task.checkCancellation()`으로 취소를 전파하세요.
+
 ## Requirements
 
 - iOS 15.0+
