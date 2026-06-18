@@ -13,6 +13,10 @@ import Foundation
 /// `JSONDecoder`가 non-Sendable 클래스이지만 인스턴스를 외부와 공유하지 않으므로
 /// `@unchecked Sendable`로 선언합니다.
 public final class URLSessionService: NetworkService, @unchecked Sendable {
+    private enum Metric {
+        static let downloadBufferSize = 64 * 1024
+    }
+
     private let session: URLSession
     private let decoder: JSONDecoder
 
@@ -32,6 +36,141 @@ public final class URLSessionService: NetworkService, @unchecked Sendable {
             let defaultDecoder = JSONDecoder()
             defaultDecoder.keyDecodingStrategy = .convertFromSnakeCase
             self.decoder = defaultDecoder
+        }
+    }
+
+    public func download<API: DownloadAPI>(
+        _ api: API
+    ) -> AsyncThrowingStream<DownloadEvent, any Error> {
+        AsyncThrowingStream { continuation in
+            let destination = api.destination
+            let session = self.session
+
+            let task = Task {
+                await Self.performDownload(
+                    api: api,
+                    session: session,
+                    continuation: continuation
+                )
+            }
+
+            continuation.onTermination = { @Sendable termination in
+                task.cancel()
+                if case .cancelled = termination {
+                    try? FileManager.default.removeItem(at: destination)
+                }
+            }
+        }
+    }
+
+    private static func performDownload<API: DownloadAPI>(
+        api: API,
+        session: URLSession,
+        continuation: AsyncThrowingStream<DownloadEvent, any Error>.Continuation
+    ) async {
+        guard let url = api.url else {
+            continuation.finish(throwing: NetworkError.invalidURL)
+            return
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = api.httpMethod.rawValue
+
+        if let headers = api.headers {
+            for (key, value) in headers.dictionary {
+                urlRequest.setValue(value, forHTTPHeaderField: key)
+            }
+        }
+
+        let asyncBytes: URLSession.AsyncBytes
+        let response: URLResponse
+        do {
+            (asyncBytes, response) = try await session.bytes(for: urlRequest)
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            continuation.finish(throwing: CancellationError())
+            return
+        } catch {
+            continuation.finish(throwing: NetworkError.unknown(error))
+            return
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            continuation.finish(throwing: NetworkError.invalidResponse)
+            return
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            continuation.finish(throwing: NetworkError.httpError(statusCode: httpResponse.statusCode))
+            return
+        }
+
+        let totalBytes: Int64? = {
+            let length = httpResponse.expectedContentLength
+            return length > 0 ? length : nil
+        }()
+
+        let destination = api.destination
+        try? FileManager.default.removeItem(at: destination)
+
+        guard FileManager.default.createFile(atPath: destination.path, contents: nil) else {
+            continuation.finish(throwing: NetworkError.unknown(
+                DownloadFileSystemError.cannotCreateFile(path: destination.path)
+            ))
+            return
+        }
+
+        let fileHandle: FileHandle
+        do {
+            fileHandle = try FileHandle(forWritingTo: destination)
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            continuation.finish(throwing: NetworkError.unknown(error))
+            return
+        }
+
+        var bytesTransferred: Int64 = 0
+        var buffer = Data()
+        buffer.reserveCapacity(Metric.downloadBufferSize)
+
+        do {
+            for try await byte in asyncBytes {
+                buffer.append(byte)
+                if buffer.count >= Metric.downloadBufferSize {
+                    try fileHandle.write(contentsOf: buffer)
+                    bytesTransferred += Int64(buffer.count)
+                    buffer.removeAll(keepingCapacity: true)
+                    continuation.yield(.progress(TransferProgress(
+                        bytesTransferred: bytesTransferred,
+                        totalBytes: totalBytes
+                    )))
+                }
+            }
+
+            if !buffer.isEmpty {
+                try fileHandle.write(contentsOf: buffer)
+                bytesTransferred += Int64(buffer.count)
+                buffer.removeAll(keepingCapacity: true)
+            }
+
+            continuation.yield(.progress(TransferProgress(
+                bytesTransferred: bytesTransferred,
+                totalBytes: totalBytes
+            )))
+            try? fileHandle.close()
+            continuation.yield(.completed(destination))
+            continuation.finish()
+        } catch is CancellationError {
+            try? fileHandle.close()
+            try? FileManager.default.removeItem(at: destination)
+            continuation.finish(throwing: CancellationError())
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            try? fileHandle.close()
+            try? FileManager.default.removeItem(at: destination)
+            continuation.finish(throwing: CancellationError())
+        } catch {
+            try? fileHandle.close()
+            try? FileManager.default.removeItem(at: destination)
+            continuation.finish(throwing: NetworkError.unknown(error))
         }
     }
 
