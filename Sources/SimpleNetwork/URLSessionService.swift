@@ -149,15 +149,13 @@ public final class URLSessionService: NetworkService, @unchecked Sendable {
             throw NetworkError.invalidResponse
         }
 
-        let responseBody = String(data: data, encoding: .utf8) ?? "<\(data.count) bytes>"
-
         guard (200...299).contains(httpResponse.statusCode) else {
-            logger.error("응답 실패 [\(httpResponse.statusCode)] \(url.absoluteString) - \(responseBody)")
+            logger.error("응답 실패 [\(httpResponse.statusCode)] \(url.absoluteString) - \(String(data: data, encoding: .utf8) ?? "<\(data.count) bytes>")")
             throw NetworkError.httpError(statusCode: httpResponse.statusCode)
         }
 
         logger.info("응답 성공 [\(httpResponse.statusCode)] \(url.absoluteString)")
-        logger.debug("응답 본문: \(responseBody)")
+        logger.debug("응답 본문: \(String(data: data, encoding: .utf8) ?? "<\(data.count) bytes>")")
 
         do {
             let decodedResponse = try decoder.decode(API.Response.self, from: data)
