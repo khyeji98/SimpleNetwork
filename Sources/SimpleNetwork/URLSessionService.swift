@@ -13,10 +13,6 @@ import Foundation
 /// `JSONDecoder`가 non-Sendable 클래스이지만 인스턴스를 외부와 공유하지 않으므로
 /// `@unchecked Sendable`로 선언합니다.
 public final class URLSessionService: NetworkService, @unchecked Sendable {
-    private enum Metric {
-        static let downloadBufferSize = 64 * 1024
-    }
-
     private let session: URLSession
     private let decoder: JSONDecoder
     private let logger: NetworkLogger
@@ -48,20 +44,15 @@ public final class URLSessionService: NetworkService, @unchecked Sendable {
     ) -> AsyncThrowingStream<DownloadEvent, any Error> {
         AsyncThrowingStream { continuation in
             let destination = api.destination
-            let session = self.session
-            let logger = self.logger
-
-            let task = Task {
-                await Self.performDownload(
-                    api: api,
-                    session: session,
-                    logger: logger,
-                    continuation: continuation
-                )
-            }
+            let downloadTask = Self.startDownload(
+                api: api,
+                session: session,
+                logger: logger,
+                continuation: continuation
+            )
 
             continuation.onTermination = { @Sendable termination in
-                task.cancel()
+                downloadTask?.cancel()
                 if case .cancelled = termination {
                     try? FileManager.default.removeItem(at: destination)
                 }
@@ -69,16 +60,25 @@ public final class URLSessionService: NetworkService, @unchecked Sendable {
         }
     }
 
-    private static func performDownload<API: DownloadAPI>(
+    private static func startDownload<API: DownloadAPI>(
         api: API,
         session: URLSession,
         logger: NetworkLogger,
         continuation: AsyncThrowingStream<DownloadEvent, any Error>.Continuation
-    ) async {
+    ) -> URLSessionDownloadTask? {
         guard let url = api.url else {
             logger.error("다운로드 실패: 유효하지 않은 URL")
             continuation.finish(throwing: NetworkError.invalidURL)
-            return
+            return nil
+        }
+
+        let destination = api.destination
+        let parentDirectory = destination.deletingLastPathComponent()
+        guard FileManager.default.fileExists(atPath: parentDirectory.path) else {
+            continuation.finish(throwing: NetworkError.unknown(
+                DownloadFileSystemError.cannotCreateFile(path: destination.path)
+            ))
+            return nil
         }
 
         logger.debug("다운로드 시작: \(api.httpMethod.rawValue) \(url.absoluteString)")
@@ -92,103 +92,15 @@ public final class URLSessionService: NetworkService, @unchecked Sendable {
             }
         }
 
-        let asyncBytes: URLSession.AsyncBytes
-        let response: URLResponse
-        do {
-            (asyncBytes, response) = try await session.bytes(for: urlRequest)
-        } catch let urlError as URLError where urlError.code == .cancelled {
-            logger.debug("다운로드 취소됨: \(url.absoluteString)")
-            continuation.finish(throwing: CancellationError())
-            return
-        } catch {
-            logger.error("다운로드 실패: \(url.absoluteString) - \(error.localizedDescription)")
-            continuation.finish(throwing: NetworkError.unknown(error))
-            return
-        }
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            logger.error("다운로드 실패: 유효하지 않은 응답 - \(url.absoluteString)")
-            continuation.finish(throwing: NetworkError.invalidResponse)
-            return
-        }
-
-        guard (200...299).contains(httpResponse.statusCode) else {
-            logger.error("다운로드 응답 실패 [\(httpResponse.statusCode)] \(url.absoluteString)")
-            continuation.finish(throwing: NetworkError.httpError(statusCode: httpResponse.statusCode))
-            return
-        }
-
-        logger.info("다운로드 응답 성공 [\(httpResponse.statusCode)] \(url.absoluteString)")
-
-        let totalBytes: Int64? = {
-            let length = httpResponse.expectedContentLength
-            return length > 0 ? length : nil
-        }()
-
-        let destination = api.destination
-        try? FileManager.default.removeItem(at: destination)
-
-        guard FileManager.default.createFile(atPath: destination.path, contents: nil) else {
-            continuation.finish(throwing: NetworkError.unknown(
-                DownloadFileSystemError.cannotCreateFile(path: destination.path)
-            ))
-            return
-        }
-
-        let fileHandle: FileHandle
-        do {
-            fileHandle = try FileHandle(forWritingTo: destination)
-        } catch {
-            try? FileManager.default.removeItem(at: destination)
-            continuation.finish(throwing: NetworkError.unknown(error))
-            return
-        }
-
-        var bytesTransferred: Int64 = 0
-        var buffer = Data()
-        buffer.reserveCapacity(Metric.downloadBufferSize)
-
-        do {
-            for try await byte in asyncBytes {
-                buffer.append(byte)
-                if buffer.count >= Metric.downloadBufferSize {
-                    try fileHandle.write(contentsOf: buffer)
-                    bytesTransferred += Int64(buffer.count)
-                    buffer.removeAll(keepingCapacity: true)
-                    continuation.yield(.progress(TransferProgress(
-                        bytesTransferred: bytesTransferred,
-                        totalBytes: totalBytes
-                    )))
-                }
-            }
-
-            if !buffer.isEmpty {
-                try fileHandle.write(contentsOf: buffer)
-                bytesTransferred += Int64(buffer.count)
-                buffer.removeAll(keepingCapacity: true)
-            }
-
-            continuation.yield(.progress(TransferProgress(
-                bytesTransferred: bytesTransferred,
-                totalBytes: totalBytes
-            )))
-            try? fileHandle.close()
-            logger.info("다운로드 완료: \(bytesTransferred) bytes → \(destination.path)")
-            continuation.yield(.completed(destination))
-            continuation.finish()
-        } catch is CancellationError {
-            try? fileHandle.close()
-            try? FileManager.default.removeItem(at: destination)
-            continuation.finish(throwing: CancellationError())
-        } catch let urlError as URLError where urlError.code == .cancelled {
-            try? fileHandle.close()
-            try? FileManager.default.removeItem(at: destination)
-            continuation.finish(throwing: CancellationError())
-        } catch {
-            try? fileHandle.close()
-            try? FileManager.default.removeItem(at: destination)
-            continuation.finish(throwing: NetworkError.unknown(error))
-        }
+        let delegate = DownloadTaskDelegate(
+            destination: destination,
+            logger: logger,
+            continuation: continuation
+        )
+        let task = session.downloadTask(with: urlRequest)
+        task.delegate = delegate
+        task.resume()
+        return task
     }
 
     public func request<API: RequestAPI>(_ api: API) async throws -> API.Response {
