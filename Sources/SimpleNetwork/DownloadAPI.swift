@@ -37,8 +37,10 @@ public protocol DownloadAPI: Sendable {
 public extension DownloadAPI {
     /// 완전한 요청 URL을 생성합니다. `RequestAPI`와 동일한 규칙을 따릅니다.
     var url: URL? {
-        guard var urlComponents = URLComponents(string: baseURL) else { return nil }
-        urlComponents.path = path
+        guard let base = URL(string: baseURL) else { return nil }
+
+        let fullURL = base.appendingPathComponent(path)
+        guard var urlComponents = URLComponents(url: fullURL, resolvingAgainstBaseURL: false) else { return nil }
 
         if let query {
             let items = query.queryItems
