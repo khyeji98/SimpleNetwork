@@ -51,7 +51,7 @@ public final class URLSessionService: NetworkService, @unchecked Sendable {
                 continuation: continuation
             )
 
-            continuation.onTermination = { @Sendable termination in
+            continuation.onTermination = { @Sendable [weak downloadTask] termination in
                 downloadTask?.cancel()
                 if case .cancelled = termination {
                     try? FileManager.default.removeItem(at: destination)
