@@ -19,17 +19,21 @@ public final class URLSessionService: NetworkService, @unchecked Sendable {
 
     private let session: URLSession
     private let decoder: JSONDecoder
+    private let logger: NetworkLogger
 
     /// URLSessionService를 초기화합니다.
     /// - Parameters:
     ///   - session: 사용할 URLSession 인스턴스 (기본값: .shared)
     ///   - decoder: JSON 디코딩에 사용할 JSONDecoder (기본값: snake_case 변환)
+    ///   - logger: 통신 로그를 기록할 NetworkLogger (기본값: 활성화된 기본 로거)
     public init(
         session: URLSession = .shared,
-        decoder: JSONDecoder? = nil
+        decoder: JSONDecoder? = nil,
+        logger: NetworkLogger = NetworkLogger()
     ) {
         self.session = session
-        
+        self.logger = logger
+
         if let decoder = decoder {
             self.decoder = decoder
         } else {
@@ -45,11 +49,13 @@ public final class URLSessionService: NetworkService, @unchecked Sendable {
         AsyncThrowingStream { continuation in
             let destination = api.destination
             let session = self.session
+            let logger = self.logger
 
             let task = Task {
                 await Self.performDownload(
                     api: api,
                     session: session,
+                    logger: logger,
                     continuation: continuation
                 )
             }
@@ -66,12 +72,16 @@ public final class URLSessionService: NetworkService, @unchecked Sendable {
     private static func performDownload<API: DownloadAPI>(
         api: API,
         session: URLSession,
+        logger: NetworkLogger,
         continuation: AsyncThrowingStream<DownloadEvent, any Error>.Continuation
     ) async {
         guard let url = api.url else {
+            logger.error("다운로드 실패: 유효하지 않은 URL")
             continuation.finish(throwing: NetworkError.invalidURL)
             return
         }
+
+        logger.debug("다운로드 시작: \(api.httpMethod.rawValue) \(url.absoluteString)")
 
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = api.httpMethod.rawValue
@@ -87,22 +97,28 @@ public final class URLSessionService: NetworkService, @unchecked Sendable {
         do {
             (asyncBytes, response) = try await session.bytes(for: urlRequest)
         } catch let urlError as URLError where urlError.code == .cancelled {
+            logger.debug("다운로드 취소됨: \(url.absoluteString)")
             continuation.finish(throwing: CancellationError())
             return
         } catch {
+            logger.error("다운로드 실패: \(url.absoluteString) - \(error.localizedDescription)")
             continuation.finish(throwing: NetworkError.unknown(error))
             return
         }
 
         guard let httpResponse = response as? HTTPURLResponse else {
+            logger.error("다운로드 실패: 유효하지 않은 응답 - \(url.absoluteString)")
             continuation.finish(throwing: NetworkError.invalidResponse)
             return
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
+            logger.error("다운로드 응답 실패 [\(httpResponse.statusCode)] \(url.absoluteString)")
             continuation.finish(throwing: NetworkError.httpError(statusCode: httpResponse.statusCode))
             return
         }
+
+        logger.info("다운로드 응답 성공 [\(httpResponse.statusCode)] \(url.absoluteString)")
 
         let totalBytes: Int64? = {
             let length = httpResponse.expectedContentLength
@@ -157,6 +173,7 @@ public final class URLSessionService: NetworkService, @unchecked Sendable {
                 totalBytes: totalBytes
             )))
             try? fileHandle.close()
+            logger.info("다운로드 완료: \(bytesTransferred) bytes → \(destination.path)")
             continuation.yield(.completed(destination))
             continuation.finish()
         } catch is CancellationError {
@@ -176,8 +193,11 @@ public final class URLSessionService: NetworkService, @unchecked Sendable {
 
     public func request<API: RequestAPI>(_ api: API) async throws -> API.Response {
         guard let url = api.url else {
+            logger.error("요청 실패: 유효하지 않은 URL")
             throw NetworkError.invalidURL
         }
+
+        logger.debug("요청 시작: \(api.httpMethod.rawValue) \(url.absoluteString)")
 
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = api.httpMethod.rawValue
@@ -208,21 +228,30 @@ public final class URLSessionService: NetworkService, @unchecked Sendable {
         do {
             (data, response) = try await session.data(for: urlRequest)
         } catch {
+            logger.error("요청 실패: \(url.absoluteString) - \(error.localizedDescription)")
             throw NetworkError.unknown(error)
         }
 
         guard let httpResponse = response as? HTTPURLResponse else {
+            logger.error("요청 실패: 유효하지 않은 응답 - \(url.absoluteString)")
             throw NetworkError.invalidResponse
         }
 
+        let responseBody = String(data: data, encoding: .utf8) ?? "<\(data.count) bytes>"
+
         guard (200...299).contains(httpResponse.statusCode) else {
+            logger.error("응답 실패 [\(httpResponse.statusCode)] \(url.absoluteString) - \(responseBody)")
             throw NetworkError.httpError(statusCode: httpResponse.statusCode)
         }
+
+        logger.info("응답 성공 [\(httpResponse.statusCode)] \(url.absoluteString)")
+        logger.debug("응답 본문: \(responseBody)")
 
         do {
             let decodedResponse = try decoder.decode(API.Response.self, from: data)
             return decodedResponse
         } catch {
+            logger.error("디코딩 실패: \(API.Response.self) - \(error.localizedDescription)")
             throw NetworkError.decodingFailed(error)
         }
     }
