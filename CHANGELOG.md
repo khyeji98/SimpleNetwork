@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0](https://github.com/khyeji98/SimpleNetwork/compare/v1.1.0...v1.2.0) (2026-06-19)
+
+
+### Features
+
+* NetworkLogger 도입 및 통신 로깅 추가 ([1fdd998](https://github.com/khyeji98/SimpleNetwork/commit/1fdd998aaa63a70cd10e4175ced955b4c5459e05))
+* 다운로드 기능 및 통신 로깅 추가 (1.2.0) ([b613202](https://github.com/khyeji98/SimpleNetwork/commit/b6132026c5eef065ece3a8d2660c2595101f499a))
+
 ## [1.1.0](https://github.com/khyeji98/SimpleNetwork/compare/1.0.0...v1.1.0) (2026-04-20)
 
 
