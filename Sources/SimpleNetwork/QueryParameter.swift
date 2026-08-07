@@ -9,14 +9,19 @@ import Foundation
 
 /// 쿼리 파라미터를 정의하는 프로토콜입니다.
 /// 구조체의 프로퍼티만 정의하면 라이브러리가 자동으로 URLQueryItem으로 변환합니다.
-public protocol QueryParameter: Encodable, Sendable {}
+public protocol QueryParameter: Encodable, Sendable {
+    /// 쿼리 키 변환 전략. 기본값은 `.useDefaultKeys`이며, 채택 타입에서 재정의할 수 있습니다.
+    var keyEncodingStrategy: JSONEncoder.KeyEncodingStrategy { get }
+}
 
 public extension QueryParameter {
+    var keyEncodingStrategy: JSONEncoder.KeyEncodingStrategy { .useDefaultKeys }
+
     /// 프로퍼티를 URLQueryItem 배열로 자동 변환합니다.
     /// 플랫한 key-value 구조만 지원합니다. 중첩 객체나 배열은 지원하지 않습니다.
     var queryItems: [URLQueryItem] {
         let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
+        encoder.keyEncodingStrategy = keyEncodingStrategy
         guard let data = try? encoder.encode(self),
               let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return [] }

@@ -11,7 +11,7 @@ final class QueryParameterTests: XCTestCase {
 
         let dict = Dictionary(items.map { ($0.name, $0.value) }, uniquingKeysWith: { _, last in last })
         XCTAssertEqual(dict["page"], "1")
-        XCTAssertEqual(dict["per_page"], "20")
+        XCTAssertEqual(dict["perPage"], "20")
     }
 
     func test_QueryParameter_문자열_프로퍼티_변환() {
@@ -28,13 +28,22 @@ final class QueryParameterTests: XCTestCase {
         let items = query.queryItems
 
         let dict = Dictionary(items.map { ($0.name, $0.value) }, uniquingKeysWith: { _, last in last })
-        XCTAssertEqual(dict["is_active"], "true")
+        XCTAssertEqual(dict["isActive"], "true")
     }
 
-    func test_QueryParameter_snake_case_변환() {
+    // MARK: - keyEncodingStrategy
+
+    func test_QueryParameter_기본_전략은_키를_변환하지_않음() {
         let query = SampleQuery(page: 1, perPage: 10)
-        let items = query.queryItems
-        let names = items.map { $0.name }
+        let names = query.queryItems.map { $0.name }
+
+        XCTAssertTrue(names.contains("perPage"))
+        XCTAssertFalse(names.contains("per_page"))
+    }
+
+    func test_QueryParameter_전략_재정의시_snake_case_변환() {
+        let query = SnakeCaseQuery(page: 1, perPage: 10)
+        let names = query.queryItems.map { $0.name }
 
         XCTAssertTrue(names.contains("per_page"))
         XCTAssertFalse(names.contains("perPage"))
@@ -101,6 +110,13 @@ final class QueryParameterTests: XCTestCase {
 private struct SampleQuery: QueryParameter {
     let page: Int
     let perPage: Int
+}
+
+private struct SnakeCaseQuery: QueryParameter {
+    let page: Int
+    let perPage: Int
+
+    var keyEncodingStrategy: JSONEncoder.KeyEncodingStrategy { .convertToSnakeCase }
 }
 
 private struct StringQuery: QueryParameter {

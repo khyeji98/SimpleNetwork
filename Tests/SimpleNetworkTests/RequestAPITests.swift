@@ -22,7 +22,7 @@ final class RequestAPITests: XCTestCase {
             uniquingKeysWith: { _, last in last }
         )
         XCTAssertEqual(queryDict["page"], "1")
-        XCTAssertEqual(queryDict["per_page"], "20")
+        XCTAssertEqual(queryDict["perPage"], "20")
     }
 
     func test_query가_nil이면_쿼리_없는_URL() {
