@@ -10,33 +10,30 @@ import Foundation
 /// URLSession을 사용하여 네트워크 요청을 수행하는 구현체입니다.
 ///
 /// 모든 저장 프로퍼티가 `let`이며 내부 상태를 변경하지 않으므로 동시성 안전합니다.
-/// `JSONDecoder`가 non-Sendable 클래스이지만 인스턴스를 외부와 공유하지 않으므로
+/// `JSONEncoder`/`JSONDecoder`가 non-Sendable 클래스이지만 인스턴스를 외부와 공유하지 않으므로
 /// `@unchecked Sendable`로 선언합니다.
 public final class URLSessionService: NetworkService, @unchecked Sendable {
     private let session: URLSession
+    private let encoder: JSONEncoder
     private let decoder: JSONDecoder
     private let logger: NetworkLogger
 
     /// URLSessionService를 초기화합니다.
     /// - Parameters:
     ///   - session: 사용할 URLSession 인스턴스 (기본값: .shared)
-    ///   - decoder: JSON 디코딩에 사용할 JSONDecoder (기본값: snake_case 변환)
+    ///   - encoder: 요청 바디 인코딩에 사용할 JSONEncoder (기본값: 키 변환 없음)
+    ///   - decoder: 응답 디코딩에 사용할 JSONDecoder (기본값: 키 변환 없음)
     ///   - logger: 통신 로그를 기록할 NetworkLogger (기본값: 활성화된 기본 로거)
     public init(
         session: URLSession = .shared,
-        decoder: JSONDecoder? = nil,
+        encoder: JSONEncoder = JSONEncoder(),
+        decoder: JSONDecoder = JSONDecoder(),
         logger: NetworkLogger = NetworkLogger()
     ) {
         self.session = session
+        self.encoder = encoder
+        self.decoder = decoder
         self.logger = logger
-
-        if let decoder = decoder {
-            self.decoder = decoder
-        } else {
-            let defaultDecoder = JSONDecoder()
-            defaultDecoder.keyDecodingStrategy = .convertFromSnakeCase
-            self.decoder = defaultDecoder
-        }
     }
 
     public func download<API: DownloadAPI>(
@@ -124,10 +121,7 @@ public final class URLSessionService: NetworkService, @unchecked Sendable {
         // 2. 바디 설정
         if let body = api.body {
             do {
-                let encoder = JSONEncoder()
-                encoder.keyEncodingStrategy = .convertToSnakeCase // 기본값 설정 (필요시 주입받도록 개선 가능)
-                let bodyData = try encoder.encode(body)
-                urlRequest.httpBody = bodyData
+                urlRequest.httpBody = try encoder.encode(body)
                 if urlRequest.value(forHTTPHeaderField: "Content-Type") == nil {
                     urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 }
