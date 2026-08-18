@@ -14,7 +14,7 @@
 - ⚡️ **Swift Concurrency**: `async/await` for requests, `AsyncThrowingStream` for downloads. Strict concurrency checking is enabled.
 - 🛡 **Type-Safe**: Responses, request bodies, query parameters, and headers are all strongly typed (`Decodable`, `Encodable`, `QueryParameter`, `HTTPHeaders`).
 - ⬇️ **Download with Progress**: Stream `.progress` events and a final `.completed(URL)`, with automatic cleanup of partial files on cancellation.
-- ⚙️ **Customizable Coding**: Inject your own `JSONEncoder`/`JSONDecoder`. Defaults perform **no key conversion** (`.useDefaultKeys`).
+- ⚙️ **Per-API Coding**: Set a default encoder/decoder on the service and override it on individual APIs with `BodyEncoder`/`ResponseDecoder`. Defaults perform **no key conversion** (`.useDefaultKeys`).
 - 📝 **Built-in Logging**: `NetworkLogger` wraps `OSLog` and can be tuned or disabled per service.
 - 🚨 **Typed Errors**: Failures surface as `NetworkError` with `LocalizedError` descriptions.
 
@@ -207,22 +207,86 @@ Available helpers: `authorization(_:)`, `authorization(bearer:)`, `contentType(_
 ### 7. Customize the service
 
 ```swift
-let encoder = JSONEncoder()
-encoder.keyEncodingStrategy = .convertToSnakeCase
-
-let decoder = JSONDecoder()
-decoder.keyDecodingStrategy = .convertFromSnakeCase
-decoder.dateDecodingStrategy = .iso8601
-
 let networkService = URLSessionService(
     session: URLSession(configuration: .default),
-    encoder: encoder,
-    decoder: decoder,
+    encoder: JSONBodyEncoder(keyEncodingStrategy: .convertToSnakeCase),
+    decoder: JSONResponseDecoder(
+        keyDecodingStrategy: .convertFromSnakeCase,
+        dateDecodingStrategy: .iso8601
+    ),
     logger: NetworkLogger(category: "API", isEnabled: true)
 )
 ```
 
-Every parameter has a default: `.shared` session, plain `JSONEncoder()`/`JSONDecoder()` (no key conversion), and an enabled `NetworkLogger`. Pass `NetworkLogger(isEnabled: false)` to silence logging.
+Every parameter has a default: `.shared` session, plain `JSONBodyEncoder()`/`JSONResponseDecoder()` (no key conversion), and an enabled `NetworkLogger`. Pass `NetworkLogger(isEnabled: false)` to silence logging.
+
+The encoder and decoder set here are **defaults**. An individual API that overrides them takes precedence.
+
+### 8. Override the encoder/decoder per API
+
+When a single endpoint needs a different coding strategy, override it in the API declaration. Call sites stay the same.
+
+```swift
+struct LegacyUserAPI: RequestAPI {
+    typealias Query = EmptyQuery
+    typealias Response = User
+
+    var httpMethod: HTTPMethod { .get }
+    var baseURL: String { "https://api.example.com" }
+    var path: String { "/legacy/user" }
+
+    // Only this endpoint responds with snake_case
+    var decoder: (any ResponseDecoder)? {
+        JSONResponseDecoder(keyDecodingStrategy: .convertFromSnakeCase)
+    }
+}
+```
+
+`BodyEncoder`/`ResponseDecoder` are `Sendable`, so an instance can be shared instead of rebuilt on every request.
+
+```swift
+struct UploadAPI: RequestAPI {
+    private static let sharedEncoder = JSONBodyEncoder(maxByteCount: 1_000_000)
+
+    var encoder: (any BodyEncoder)? { Self.sharedEncoder }
+    ...
+}
+```
+
+#### Body size limit
+
+With `JSONBodyEncoder(maxByteCount:)`, an encoded body over the limit throws `NetworkError.bodyTooLarge` and the request is never sent.
+
+```swift
+var encoder: (any BodyEncoder)? { JSONBodyEncoder(maxByteCount: 1_000_000) }
+```
+
+```swift
+do {
+    _ = try await networkService.request(UploadAPI(payload: payload))
+} catch NetworkError.bodyTooLarge(let byteCount, let limit) {
+    print("Body too large: \(byteCount) / \(limit)")
+}
+```
+
+> `Encodable` cannot report its size before encoding, so the check runs after encoding completes. It reliably prevents transmission, but it does not prevent the memory used during encoding itself.
+
+#### Custom encoders
+
+For policies beyond JSON — compression, signing, validation — implement `BodyEncoder` directly. Errors thrown here are preserved as the associated value of `NetworkError.encodingFailed`.
+
+```swift
+struct SignedBodyEncoder: BodyEncoder {
+    let secret: String
+
+    func encode(_ body: any Encodable & Sendable) throws -> Data {
+        let data = try JSONBodyEncoder().encode(body)
+        guard let signed = sign(data, with: secret) else { throw SigningError.failed }
+
+        return signed
+    }
+}
+```
 
 Depend on the `NetworkService` protocol rather than the concrete type to keep call sites testable:
 
@@ -236,7 +300,7 @@ final class UserRepository {
 }
 ```
 
-### 8. Logging
+### 9. Logging
 
 `NetworkLogger` wraps `os.Logger`, so output is visible in Console.app and Xcode. Requests, responses, and failures are logged at `debug`/`info`/`error` levels.
 
@@ -256,7 +320,8 @@ NetworkLogger(
 | --- | --- |
 | `.invalidURL` | `baseURL` + `path` + `query` could not form a valid URL. |
 | `.invalidResponse` | The response was not an `HTTPURLResponse`. |
-| `.encodingFailed` | Encoding the request body failed. |
+| `.encodingFailed(any Error & Sendable)` | Encoding the request body failed. |
+| `.bodyTooLarge(byteCount: Int, limit: Int)` | The encoded body exceeded the allowed size. |
 | `.decodingFailed(any Error & Sendable)` | Decoding the response body failed. |
 | `.httpError(statusCode: Int)` | The status code was outside `200...299`. |
 | `.unknown(any Error & Sendable)` | Transport or file-system failure. |
@@ -273,6 +338,8 @@ NetworkLogger(
 | `DownloadAPI` | Endpoint definition for file downloads. |
 | `QueryParameter` / `EmptyQuery` | Automatic `URLQueryItem` conversion. |
 | `HTTPHeader` / `HTTPHeaders` | Type-safe header construction. |
+| `BodyEncoder` / `JSONBodyEncoder` | Request body encoding strategy (with size limit). |
+| `ResponseDecoder` / `JSONResponseDecoder` | Response decoding strategy. |
 | `HTTPMethod` | `GET`, `POST`, `PUT`, `DELETE`, `PATCH`. |
 | `DownloadEvent` | `.progress(TransferProgress)` / `.completed(URL)`. |
 | `TransferProgress` | Transferred bytes, total bytes, completion fraction. |

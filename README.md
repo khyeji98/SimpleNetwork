@@ -14,7 +14,7 @@
 - ⚡️ **Swift Concurrency**: 요청은 `async/await`, 다운로드는 `AsyncThrowingStream`으로 처리하며 Strict Concurrency 검사가 활성화되어 있습니다.
 - 🛡 **타입 안전성**: 응답, 요청 바디, 쿼리 파라미터, 헤더가 모두 타입으로 표현됩니다 (`Decodable`, `Encodable`, `QueryParameter`, `HTTPHeaders`).
 - ⬇️ **진행률 기반 다운로드**: `.progress` 이벤트를 스트리밍하고 마지막에 `.completed(URL)`을 방출하며, 취소 시 부분 파일을 자동으로 정리합니다.
-- ⚙️ **코딩 전략 주입**: `JSONEncoder`/`JSONDecoder`를 직접 주입할 수 있습니다. 기본값은 **키 변환을 하지 않습니다**(`.useDefaultKeys`).
+- ⚙️ **API별 코딩 전략**: 서비스에 기본 인코더/디코더를 두고, 특정 API에서만 `BodyEncoder`/`ResponseDecoder`로 재정의할 수 있습니다. 기본값은 **키 변환을 하지 않습니다**(`.useDefaultKeys`).
 - 📝 **내장 로깅**: `OSLog`를 래핑한 `NetworkLogger`를 서비스 단위로 설정하거나 끌 수 있습니다.
 - 🚨 **타입화된 에러**: 모든 실패는 `LocalizedError`를 채택한 `NetworkError`로 전달됩니다.
 
@@ -207,22 +207,86 @@ var headers: HTTPHeaders? {
 ### 7. 서비스 커스터마이징
 
 ```swift
-let encoder = JSONEncoder()
-encoder.keyEncodingStrategy = .convertToSnakeCase
-
-let decoder = JSONDecoder()
-decoder.keyDecodingStrategy = .convertFromSnakeCase
-decoder.dateDecodingStrategy = .iso8601
-
 let networkService = URLSessionService(
     session: URLSession(configuration: .default),
-    encoder: encoder,
-    decoder: decoder,
+    encoder: JSONBodyEncoder(keyEncodingStrategy: .convertToSnakeCase),
+    decoder: JSONResponseDecoder(
+        keyDecodingStrategy: .convertFromSnakeCase,
+        dateDecodingStrategy: .iso8601
+    ),
     logger: NetworkLogger(category: "API", isEnabled: true)
 )
 ```
 
-모든 파라미터에는 기본값이 있습니다. `.shared` 세션, 키 변환을 하지 않는 `JSONEncoder()`/`JSONDecoder()`, 활성화된 `NetworkLogger`가 기본입니다. 로깅을 끄려면 `NetworkLogger(isEnabled: false)`를 전달하세요.
+모든 파라미터에는 기본값이 있습니다. `.shared` 세션, 키 변환을 하지 않는 `JSONBodyEncoder()`/`JSONResponseDecoder()`, 활성화된 `NetworkLogger`가 기본입니다. 로깅을 끄려면 `NetworkLogger(isEnabled: false)`를 전달하세요.
+
+여기서 지정한 인코더/디코더는 **기본값**입니다. 개별 API가 재정의하면 그쪽이 우선합니다.
+
+### 8. API별 인코더/디코더 재정의
+
+특정 엔드포인트만 다른 코딩 전략이 필요하다면 API 선언부에서 재정의합니다. 호출부는 바뀌지 않습니다.
+
+```swift
+struct LegacyUserAPI: RequestAPI {
+    typealias Query = EmptyQuery
+    typealias Response = User
+
+    var httpMethod: HTTPMethod { .get }
+    var baseURL: String { "https://api.example.com" }
+    var path: String { "/legacy/user" }
+
+    // 이 API의 응답만 snake_case로 내려오는 경우
+    var decoder: (any ResponseDecoder)? {
+        JSONResponseDecoder(keyDecodingStrategy: .convertFromSnakeCase)
+    }
+}
+```
+
+`BodyEncoder`/`ResponseDecoder`는 `Sendable`이므로 매번 새로 만들지 않고 공유할 수 있습니다.
+
+```swift
+struct UploadAPI: RequestAPI {
+    private static let sharedEncoder = JSONBodyEncoder(maxByteCount: 1_000_000)
+
+    var encoder: (any BodyEncoder)? { Self.sharedEncoder }
+    ...
+}
+```
+
+#### 바디 크기 제한
+
+`JSONBodyEncoder(maxByteCount:)`를 지정하면 인코딩 결과가 제한을 넘을 때 `NetworkError.bodyTooLarge`를 던지고 요청을 전송하지 않습니다.
+
+```swift
+var encoder: (any BodyEncoder)? { JSONBodyEncoder(maxByteCount: 1_000_000) }
+```
+
+```swift
+do {
+    _ = try await networkService.request(UploadAPI(payload: payload))
+} catch NetworkError.bodyTooLarge(let byteCount, let limit) {
+    print("바디가 너무 큽니다: \(byteCount) / \(limit)")
+}
+```
+
+> `Encodable`은 인코딩 전에 크기를 알 수 없으므로 검사는 인코딩을 마친 뒤에 이루어집니다. 서버로의 전송은 확실히 막지만, 인코딩 과정에서 발생하는 메모리 사용 자체를 막지는 않습니다.
+
+#### 커스텀 인코더 구현
+
+압축, 서명, 검증 등 JSON 외의 정책이 필요하면 `BodyEncoder`를 직접 구현합니다. 여기서 던진 에러는 `NetworkError.encodingFailed`의 연관값으로 보존됩니다.
+
+```swift
+struct SignedBodyEncoder: BodyEncoder {
+    let secret: String
+
+    func encode(_ body: any Encodable & Sendable) throws -> Data {
+        let data = try JSONBodyEncoder().encode(body)
+        guard let signed = sign(data, with: secret) else { throw SigningError.failed }
+
+        return signed
+    }
+}
+```
 
 테스트 용이성을 위해 구체 타입 대신 `NetworkService` 프로토콜에 의존하는 것을 권장합니다.
 
@@ -236,7 +300,7 @@ final class UserRepository {
 }
 ```
 
-### 8. 로깅
+### 9. 로깅
 
 `NetworkLogger`는 `os.Logger`를 래핑하므로 Console.app과 Xcode 콘솔에서 로그를 확인할 수 있습니다. 요청, 응답, 실패가 각각 `debug`/`info`/`error` 레벨로 기록됩니다.
 
@@ -256,7 +320,8 @@ NetworkLogger(
 | --- | --- |
 | `.invalidURL` | `baseURL` + `path` + `query`로 유효한 URL을 만들지 못한 경우 |
 | `.invalidResponse` | 응답이 `HTTPURLResponse`가 아닌 경우 |
-| `.encodingFailed` | 요청 바디 인코딩에 실패한 경우 |
+| `.encodingFailed(any Error & Sendable)` | 요청 바디 인코딩에 실패한 경우 |
+| `.bodyTooLarge(byteCount: Int, limit: Int)` | 인코딩된 바디가 허용 크기를 초과한 경우 |
 | `.decodingFailed(any Error & Sendable)` | 응답 바디 디코딩에 실패한 경우 |
 | `.httpError(statusCode: Int)` | 상태 코드가 `200...299` 범위를 벗어난 경우 |
 | `.unknown(any Error & Sendable)` | 전송 또는 파일시스템 단계에서 실패한 경우 |
@@ -273,6 +338,8 @@ NetworkLogger(
 | `DownloadAPI` | 파일 다운로드 엔드포인트 정의 |
 | `QueryParameter` / `EmptyQuery` | `URLQueryItem` 자동 변환 |
 | `HTTPHeader` / `HTTPHeaders` | 타입 안전한 헤더 구성 |
+| `BodyEncoder` / `JSONBodyEncoder` | 요청 바디 인코딩 전략 (크기 제한 지원) |
+| `ResponseDecoder` / `JSONResponseDecoder` | 응답 디코딩 전략 |
 | `HTTPMethod` | `GET`, `POST`, `PUT`, `DELETE`, `PATCH` |
 | `DownloadEvent` | `.progress(TransferProgress)` / `.completed(URL)` |
 | `TransferProgress` | 전송된 바이트, 전체 바이트, 완료 비율 |
