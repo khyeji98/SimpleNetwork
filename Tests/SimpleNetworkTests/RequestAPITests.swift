@@ -52,6 +52,18 @@ final class RequestAPITests: XCTestCase {
         XCTAssertNil(api.query)
     }
 
+    func test_encoder_기본값은_nil() {
+        let api = MockGetAPI()
+
+        XCTAssertNil(api.encoder)
+    }
+
+    func test_decoder_기본값은_nil() {
+        let api = MockGetAPI()
+
+        XCTAssertNil(api.decoder)
+    }
+
     // MARK: - HTTPHeaders 타입
 
     func test_headers가_HTTPHeaders_타입() {

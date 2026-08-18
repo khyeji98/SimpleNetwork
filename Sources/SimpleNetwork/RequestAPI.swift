@@ -30,6 +30,12 @@ public protocol RequestAPI: Sendable {
 
     /// HTTP 요청 바디 (POST, PUT 등에서 사용)
     var body: (any Encodable & Sendable)? { get }
+
+    /// 이 API의 요청 바디 인코더. nil이면 서비스의 기본 인코더를 사용합니다.
+    var encoder: (any BodyEncoder)? { get }
+
+    /// 이 API의 응답 디코더. nil이면 서비스의 기본 디코더를 사용합니다.
+    var decoder: (any ResponseDecoder)? { get }
 }
 
 public extension RequestAPI {
@@ -53,4 +59,6 @@ public extension RequestAPI {
     var query: Query? { nil }
     var headers: HTTPHeaders? { nil }
     var body: (any Encodable & Sendable)? { nil }
+    var encoder: (any BodyEncoder)? { nil }
+    var decoder: (any ResponseDecoder)? { nil }
 }
