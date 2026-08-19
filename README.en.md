@@ -6,6 +6,11 @@
 
 📖 [한국어](README.md) · **English**
 
+> [!IMPORTANT]
+> **2.0 is not compatible with 1.x.** The default JSON key conversion changed (1.x: automatic snake_case → 2.0: no conversion).
+> Most affected call sites fail to compile, with one exception: `QueryParameter`.
+> See the [migration guide](MIGRATION.en.md).
+
 **SimpleNetwork** is a lightweight, protocol-oriented Swift networking library for modern iOS and macOS applications. It builds on Swift Concurrency (`async/await`, `AsyncThrowingStream`) to provide a clean, type-safe interface for HTTP requests and file downloads without the boilerplate of raw `URLSession`.
 
 ## Features
@@ -14,7 +19,7 @@
 - ⚡️ **Swift Concurrency**: `async/await` for requests, `AsyncThrowingStream` for downloads. Strict concurrency checking is enabled.
 - 🛡 **Type-Safe**: Responses, request bodies, query parameters, and headers are all strongly typed (`Decodable`, `Encodable`, `QueryParameter`, `HTTPHeaders`).
 - ⬇️ **Download with Progress**: Stream `.progress` events and a final `.completed(URL)`, with automatic cleanup of partial files on cancellation.
-- ⚙️ **Per-API Coding**: Set a default encoder/decoder on the service and override it on individual APIs with `BodyEncoder`/`ResponseDecoder`. Defaults perform **no key conversion** (`.useDefaultKeys`).
+- ⚙️ **Per-API Coding**: Set a default encoder/decoder on the service and override it on individual APIs with `BodyEncoder`/`ResponseDecoder`. The key strategy is **declared by the call site** — the library never picks one for you.
 - 📝 **Built-in Logging**: `NetworkLogger` wraps `OSLog` and can be tuned or disabled per service.
 - 🚨 **Typed Errors**: Failures surface as `NetworkError` with `LocalizedError` descriptions.
 
@@ -105,8 +110,13 @@ struct CreateUserAPI: RequestAPI {
 
 ### 3. Execute a request
 
+The encoder and decoder are required. Pass the plain instances when no key conversion is needed.
+
 ```swift
-let networkService = URLSessionService()
+let networkService = URLSessionService(
+    encoder: JSONBodyEncoder(),
+    decoder: JSONResponseDecoder()
+)
 
 Task {
     do {
@@ -140,7 +150,10 @@ struct DownloadFirmwareAPI: DownloadAPI {
     let destination: URL
 }
 
-let networkService = URLSessionService()
+let networkService = URLSessionService(
+    encoder: JSONBodyEncoder(),
+    decoder: JSONResponseDecoder()
+)
 let destination = FileManager.default.temporaryDirectory
     .appendingPathComponent("firmware.bin")
 
@@ -218,7 +231,9 @@ let networkService = URLSessionService(
 )
 ```
 
-Every parameter has a default: `.shared` session, plain `JSONBodyEncoder()`/`JSONResponseDecoder()` (no key conversion), and an enabled `NetworkLogger`. Pass `NetworkLogger(isEnabled: false)` to silence logging.
+`session` and `logger` have defaults (`.shared` session, an enabled `NetworkLogger`). Pass `NetworkLogger(isEnabled: false)` to silence logging.
+
+**`encoder` and `decoder` have no defaults.** The correct key strategy depends on the server, so the library cannot pick one for you — and a wrong default surfaces only as a runtime decoding failure after a successful build. Pass `JSONBodyEncoder()` / `JSONResponseDecoder()` when no conversion is needed.
 
 The encoder and decoder set here are **defaults**. An individual API that overrides them takes precedence.
 
@@ -294,7 +309,7 @@ Depend on the `NetworkService` protocol rather than the concrete type to keep ca
 final class UserRepository {
     private let networkService: any NetworkService
 
-    init(networkService: any NetworkService = URLSessionService()) {
+    init(networkService: any NetworkService) {
         self.networkService = networkService
     }
 }

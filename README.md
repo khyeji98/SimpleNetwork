@@ -6,6 +6,11 @@
 
 📖 **한국어** · [English](README.en.md)
 
+> [!IMPORTANT]
+> **2.0은 1.x와 호환되지 않습니다.** JSON 키 변환 기본 동작이 바뀌었습니다(1.x: snake_case 자동 변환 → 2.0: 변환 없음).
+> 영향을 받는 호출부는 대부분 컴파일 에러로 드러나지만, `QueryParameter`만은 예외입니다.
+> [마이그레이션 가이드](MIGRATION.md)를 확인하세요.
+
 **SimpleNetwork**는 iOS·macOS 앱을 위한 가볍고 프로토콜 지향적인 Swift 네트워킹 라이브러리입니다. Swift Concurrency(`async/await`, `AsyncThrowingStream`)를 기반으로, `URLSession`을 직접 다룰 때의 보일러플레이트 없이 HTTP 요청과 파일 다운로드를 타입 안전하게 처리합니다.
 
 ## 주요 기능
@@ -14,7 +19,7 @@
 - ⚡️ **Swift Concurrency**: 요청은 `async/await`, 다운로드는 `AsyncThrowingStream`으로 처리하며 Strict Concurrency 검사가 활성화되어 있습니다.
 - 🛡 **타입 안전성**: 응답, 요청 바디, 쿼리 파라미터, 헤더가 모두 타입으로 표현됩니다 (`Decodable`, `Encodable`, `QueryParameter`, `HTTPHeaders`).
 - ⬇️ **진행률 기반 다운로드**: `.progress` 이벤트를 스트리밍하고 마지막에 `.completed(URL)`을 방출하며, 취소 시 부분 파일을 자동으로 정리합니다.
-- ⚙️ **API별 코딩 전략**: 서비스에 기본 인코더/디코더를 두고, 특정 API에서만 `BodyEncoder`/`ResponseDecoder`로 재정의할 수 있습니다. 기본값은 **키 변환을 하지 않습니다**(`.useDefaultKeys`).
+- ⚙️ **API별 코딩 전략**: 서비스에 기본 인코더/디코더를 두고, 특정 API에서만 `BodyEncoder`/`ResponseDecoder`로 재정의할 수 있습니다. 키 변환 전략은 **호출부가 명시**하며, 라이브러리가 임의의 기본값을 정하지 않습니다.
 - 📝 **내장 로깅**: `OSLog`를 래핑한 `NetworkLogger`를 서비스 단위로 설정하거나 끌 수 있습니다.
 - 🚨 **타입화된 에러**: 모든 실패는 `LocalizedError`를 채택한 `NetworkError`로 전달됩니다.
 
@@ -105,8 +110,13 @@ struct CreateUserAPI: RequestAPI {
 
 ### 3. 요청 실행
 
+인코더와 디코더는 반드시 명시합니다. 키를 변환하지 않으려면 아래처럼 기본 구성을 그대로 전달하세요.
+
 ```swift
-let networkService = URLSessionService()
+let networkService = URLSessionService(
+    encoder: JSONBodyEncoder(),
+    decoder: JSONResponseDecoder()
+)
 
 Task {
     do {
@@ -140,7 +150,10 @@ struct DownloadFirmwareAPI: DownloadAPI {
     let destination: URL
 }
 
-let networkService = URLSessionService()
+let networkService = URLSessionService(
+    encoder: JSONBodyEncoder(),
+    decoder: JSONResponseDecoder()
+)
 let destination = FileManager.default.temporaryDirectory
     .appendingPathComponent("firmware.bin")
 
@@ -218,7 +231,9 @@ let networkService = URLSessionService(
 )
 ```
 
-모든 파라미터에는 기본값이 있습니다. `.shared` 세션, 키 변환을 하지 않는 `JSONBodyEncoder()`/`JSONResponseDecoder()`, 활성화된 `NetworkLogger`가 기본입니다. 로깅을 끄려면 `NetworkLogger(isEnabled: false)`를 전달하세요.
+`session`과 `logger`에는 기본값이 있습니다(`.shared` 세션, 활성화된 `NetworkLogger`). 로깅을 끄려면 `NetworkLogger(isEnabled: false)`를 전달하세요.
+
+**`encoder`와 `decoder`에는 기본값이 없습니다.** 올바른 키 변환 전략은 서버 스펙에 달려 있어 라이브러리가 대신 정할 수 없고, 잘못된 기본값은 빌드를 통과한 뒤 런타임 디코딩 실패로만 드러나기 때문입니다. 변환이 필요 없으면 `JSONBodyEncoder()` / `JSONResponseDecoder()`를 그대로 전달하세요.
 
 여기서 지정한 인코더/디코더는 **기본값**입니다. 개별 API가 재정의하면 그쪽이 우선합니다.
 
@@ -294,7 +309,7 @@ struct SignedBodyEncoder: BodyEncoder {
 final class UserRepository {
     private let networkService: any NetworkService
 
-    init(networkService: any NetworkService = URLSessionService()) {
+    init(networkService: any NetworkService) {
         self.networkService = networkService
     }
 }
