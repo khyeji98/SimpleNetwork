@@ -73,6 +73,7 @@ final class BodyEncoderTests: XCTestCase {
         let service = URLSessionService(
             session: session,
             encoder: JSONBodyEncoder(keyEncodingStrategy: .convertToSnakeCase),
+            decoder: JSONResponseDecoder(),
             logger: NetworkLogger(isEnabled: false)
         )
 
@@ -86,6 +87,7 @@ final class BodyEncoderTests: XCTestCase {
         let service = URLSessionService(
             session: session,
             encoder: JSONBodyEncoder(keyEncodingStrategy: .convertToSnakeCase),
+            decoder: JSONResponseDecoder(),
             logger: NetworkLogger(isEnabled: false)
         )
 
@@ -98,6 +100,7 @@ final class BodyEncoderTests: XCTestCase {
         MockURLProtocol.stub(chunks: [#"{"user_name":"hyeji"}"#.data(using: .utf8)!])
         let service = URLSessionService(
             session: session,
+            encoder: JSONBodyEncoder(),
             decoder: JSONResponseDecoder(),
             logger: NetworkLogger(isEnabled: false)
         )
@@ -111,7 +114,12 @@ final class BodyEncoderTests: XCTestCase {
 
     func test_크기_제한을_초과하면_요청이_전송되지_않는다() async {
         MockURLProtocol.stub(chunks: [mockBodyResponseData])
-        let service = URLSessionService(session: session, logger: NetworkLogger(isEnabled: false))
+        let service = URLSessionService(
+            session: session,
+            encoder: JSONBodyEncoder(),
+            decoder: JSONResponseDecoder(),
+            logger: NetworkLogger(isEnabled: false)
+        )
 
         do {
             _ = try await service.request(MockSizeLimitedAPI())
@@ -127,7 +135,12 @@ final class BodyEncoderTests: XCTestCase {
 
     func test_커스텀_인코더가_던진_에러가_encodingFailed로_보존된다() async {
         MockURLProtocol.stub(chunks: [mockBodyResponseData])
-        let service = URLSessionService(session: session, logger: NetworkLogger(isEnabled: false))
+        let service = URLSessionService(
+            session: session,
+            encoder: JSONBodyEncoder(),
+            decoder: JSONResponseDecoder(),
+            logger: NetworkLogger(isEnabled: false)
+        )
 
         do {
             _ = try await service.request(MockFailingEncoderAPI())

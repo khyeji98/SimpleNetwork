@@ -18,16 +18,20 @@ public final class URLSessionService: NetworkService {
 
     /// URLSessionService를 초기화합니다.
     ///
-    /// `encoder`/`decoder`는 기본값이며, `RequestAPI`에서 재정의하면 해당 API에는 그쪽이 우선합니다.
+    /// `encoder`/`decoder`에는 기본값이 없습니다. 키 변환 전략은 서버 스펙에 따라 달라지므로
+    /// 라이브러리가 임의로 정하지 않고 호출부가 명시하도록 합니다.
+    /// 여기 지정한 값은 서비스 기본값이며, `RequestAPI`가 재정의하면 해당 API에는 그쪽이 우선합니다.
+    ///
+    /// 키를 변환하지 않으려면 `JSONBodyEncoder()` / `JSONResponseDecoder()`를 그대로 전달하세요.
     /// - Parameters:
     ///   - session: 사용할 URLSession 인스턴스 (기본값: .shared)
-    ///   - encoder: 요청 바디 인코딩에 사용할 기본 인코더 (기본값: 키 변환 없음)
-    ///   - decoder: 응답 디코딩에 사용할 기본 디코더 (기본값: 키 변환 없음)
+    ///   - encoder: 요청 바디 인코딩에 사용할 기본 인코더
+    ///   - decoder: 응답 디코딩에 사용할 기본 디코더
     ///   - logger: 통신 로그를 기록할 NetworkLogger (기본값: 활성화된 기본 로거)
     public init(
         session: URLSession = .shared,
-        encoder: any BodyEncoder = JSONBodyEncoder(),
-        decoder: any ResponseDecoder = JSONResponseDecoder(),
+        encoder: any BodyEncoder,
+        decoder: any ResponseDecoder,
         logger: NetworkLogger = NetworkLogger()
     ) {
         self.session = session
@@ -35,6 +39,33 @@ public final class URLSessionService: NetworkService {
         self.decoder = decoder
         self.logger = logger
     }
+
+    /// 1.x에서 인코더/디코더를 생략하던 호출을 가로채 마이그레이션을 안내합니다.
+    ///
+    /// 1.x는 생략 시 snake_case 변환을 적용했습니다. 그대로 두면 빌드는 성공한 채
+    /// 런타임 디코딩만 깨지므로, 호출 자체를 컴파일 에러로 막습니다.
+    @available(*, unavailable, message: """
+        2.0부터 encoder/decoder를 명시해야 합니다. \
+        1.x와 동일하게 동작시키려면 encoder: JSONBodyEncoder(keyEncodingStrategy: .convertToSnakeCase), \
+        decoder: JSONResponseDecoder(keyDecodingStrategy: .convertFromSnakeCase)를 전달하세요. \
+        키를 변환하지 않으려면 JSONBodyEncoder(), JSONResponseDecoder()를 전달하세요.
+        """)
+    public convenience init(
+        session: URLSession = .shared,
+        logger: NetworkLogger = NetworkLogger()
+    ) { fatalError("unavailable") }
+
+    /// 1.x의 `JSONEncoder`/`JSONDecoder` 직접 주입 호출을 가로채 마이그레이션을 안내합니다.
+    @available(*, unavailable, message: """
+        JSONEncoder/JSONDecoder 직접 주입은 BodyEncoder/ResponseDecoder로 대체되었습니다. \
+        JSONBodyEncoder(keyEncodingStrategy:) / JSONResponseDecoder(keyDecodingStrategy:)를 사용하세요.
+        """)
+    public convenience init(
+        session: URLSession = .shared,
+        encoder: JSONEncoder,
+        decoder: JSONDecoder,
+        logger: NetworkLogger = NetworkLogger()
+    ) { fatalError("unavailable") }
 
     public func download<API: DownloadAPI>(
         _ api: API

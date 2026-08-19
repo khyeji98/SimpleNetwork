@@ -14,7 +14,11 @@ final class URLSessionServiceDownloadTests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockURLProtocol.self]
         session = URLSession(configuration: config)
-        service = URLSessionService(session: session)
+        service = URLSessionService(
+            session: session,
+            encoder: JSONBodyEncoder(),
+            decoder: JSONResponseDecoder()
+        )
 
         tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("SimpleNetworkDownloadTests-\(UUID().uuidString)")
