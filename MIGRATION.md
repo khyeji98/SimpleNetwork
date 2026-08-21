@@ -90,9 +90,16 @@ case .encodingFailed(let error): // 원인 에러가 필요하면
 
 `NetworkError.encodingFailed`를 값으로 직접 생성하던 코드만 수정이 필요합니다.
 
-### ⑤ `NetworkError.bodyTooLarge` 추가
+### ⑤ `NetworkError.httpError` 연관값 변경 — 패턴 매칭 수정
 
-`JSONBodyEncoder(maxByteCount:)`를 쓸 때만 발생합니다. `switch`를 `default` 없이 전수 처리하던 코드는 케이스 추가가 필요합니다.
+HTTP 오류 응답의 바디와 헤더를 보존하도록 `HTTPErrorData` 연관값이 추가되었습니다. 두 값은 응답에 없거나 비어 있으면 각각 `nil`입니다.
+
+```swift
+case .httpError(let statusCode, let data):
+    print(statusCode, data.body as Any, data.headers as Any)
+```
+
+기존 `case .httpError(let statusCode)` 패턴은 두 번째 연관값을 받거나 무시하도록 수정해야 합니다.
 
 ---
 

@@ -188,15 +188,18 @@ Task {
 `QueryParameter`를 채택한 타입은 자동으로 `URLQueryItem` 배열로 변환됩니다. 플랫한 key-value 구조만 지원하며 중첩 객체와 배열은 제외되고, `nil` 값은 생략됩니다. 항목은 이름순으로 정렬되며, 값에 포함된 쉼표는 `%2C`로 퍼센트 인코딩됩니다.
 
 키는 기본적으로 **변환되지 않습니다**. 변환이 필요하면 `keyEncodingStrategy`를 재정의하세요.
+`Date` 값의 기본 전략은 `.deferredToDate`이며, 서버 포맷에 맞게 `dateEncodingStrategy`를 재정의할 수 있습니다.
 
 ```swift
 struct SearchQuery: QueryParameter {
     let keyword: String
     let perPage: Int
+    let createdAfter: Date
 
     var keyEncodingStrategy: JSONEncoder.KeyEncodingStrategy { .convertToSnakeCase }
+    var dateEncodingStrategy: JSONEncoder.DateEncodingStrategy { .iso8601 }
 }
-// → ?keyword=swift&per_page=20
+// → ?created_after=2026-08-20T00:00:00Z&keyword=swift&per_page=20
 ```
 
 ### 6. 헤더
@@ -261,34 +264,18 @@ struct LegacyUserAPI: RequestAPI {
 
 ```swift
 struct UploadAPI: RequestAPI {
-    private static let sharedEncoder = JSONBodyEncoder(maxByteCount: 1_000_000)
+    private static let sharedEncoder = JSONBodyEncoder()
 
     var encoder: (any BodyEncoder)? { Self.sharedEncoder }
     ...
 }
 ```
 
-#### 바디 크기 제한
-
-`JSONBodyEncoder(maxByteCount:)`를 지정하면 인코딩 결과가 제한을 넘을 때 `NetworkError.bodyTooLarge`를 던지고 요청을 전송하지 않습니다.
-
-```swift
-var encoder: (any BodyEncoder)? { JSONBodyEncoder(maxByteCount: 1_000_000) }
-```
-
-```swift
-do {
-    _ = try await networkService.request(UploadAPI(payload: payload))
-} catch NetworkError.bodyTooLarge(let byteCount, let limit) {
-    print("바디가 너무 큽니다: \(byteCount) / \(limit)")
-}
-```
-
-> `Encodable`은 인코딩 전에 크기를 알 수 없으므로 검사는 인코딩을 마친 뒤에 이루어집니다. 서버로의 전송은 확실히 막지만, 인코딩 과정에서 발생하는 메모리 사용 자체를 막지는 않습니다.
-
 #### 커스텀 인코더 구현
 
 압축, 서명, 검증 등 JSON 외의 정책이 필요하면 `BodyEncoder`를 직접 구현합니다. 여기서 던진 에러는 `NetworkError.encodingFailed`의 연관값으로 보존됩니다.
+
+바디 크기 제한도 라이브러리의 기본 정책이 아니라 커스텀 인코더에서 정의합니다.
 
 ```swift
 struct SignedBodyEncoder: BodyEncoder {
@@ -336,10 +323,11 @@ NetworkLogger(
 | `.invalidURL` | `baseURL` + `path` + `query`로 유효한 URL을 만들지 못한 경우 |
 | `.invalidResponse` | 응답이 `HTTPURLResponse`가 아닌 경우 |
 | `.encodingFailed(any Error & Sendable)` | 요청 바디 인코딩에 실패한 경우 |
-| `.bodyTooLarge(byteCount: Int, limit: Int)` | 인코딩된 바디가 허용 크기를 초과한 경우 |
 | `.decodingFailed(any Error & Sendable)` | 응답 바디 디코딩에 실패한 경우 |
-| `.httpError(statusCode: Int)` | 상태 코드가 `200...299` 범위를 벗어난 경우 |
+| `.httpError(statusCode: Int, data: HTTPErrorData)` | 상태 코드가 `200...299` 범위를 벗어난 경우. 응답 바디와 헤더를 함께 전달 |
 | `.unknown(any Error & Sendable)` | 전송 또는 파일시스템 단계에서 실패한 경우 |
+
+`HTTPErrorData.body`와 `HTTPErrorData.headers`는 응답 값이 없거나 비어 있으면 각각 `nil`입니다.
 
 `NetworkError`는 `LocalizedError`를 채택하므로 `errorDescription`으로 사람이 읽을 수 있는 메시지를 얻을 수 있습니다.
 
@@ -353,11 +341,12 @@ NetworkLogger(
 | `DownloadAPI` | 파일 다운로드 엔드포인트 정의 |
 | `QueryParameter` / `EmptyQuery` | `URLQueryItem` 자동 변환 |
 | `HTTPHeader` / `HTTPHeaders` | 타입 안전한 헤더 구성 |
-| `BodyEncoder` / `JSONBodyEncoder` | 요청 바디 인코딩 전략 (크기 제한 지원) |
+| `BodyEncoder` / `JSONBodyEncoder` | 요청 바디 인코딩 전략 |
 | `ResponseDecoder` / `JSONResponseDecoder` | 응답 디코딩 전략 |
 | `HTTPMethod` | `GET`, `POST`, `PUT`, `DELETE`, `PATCH` |
 | `DownloadEvent` | `.progress(TransferProgress)` / `.completed(URL)` |
 | `TransferProgress` | 전송된 바이트, 전체 바이트, 완료 비율 |
+| `HTTPErrorData` | HTTP 오류 응답의 optional 바디와 헤더 |
 | `NetworkError` | 타입화된 네트워킹 실패 |
 | `NetworkLogger` | `OSLog` 기반 로깅 |
 

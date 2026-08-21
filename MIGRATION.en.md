@@ -90,9 +90,16 @@ case .encodingFailed(let error): // when you need the cause
 
 Only code that constructed `NetworkError.encodingFailed` as a value needs updating.
 
-### ⑤ `NetworkError.bodyTooLarge` added
+### ⑤ `NetworkError.httpError` associated value changed — update pattern matching
 
-Thrown only when using `JSONBodyEncoder(maxByteCount:)`. Exhaustive `switch` statements without a `default` clause need the new case.
+An `HTTPErrorData` associated value now preserves the body and headers of HTTP error responses. Each value is `nil` when it is unavailable or empty.
+
+```swift
+case .httpError(let statusCode, let data):
+    print(statusCode, data.body as Any, data.headers as Any)
+```
+
+Existing `case .httpError(let statusCode)` patterns must accept or ignore the second associated value.
 
 ---
 

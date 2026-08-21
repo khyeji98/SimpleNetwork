@@ -187,16 +187,19 @@ Task {
 
 Types conforming to `QueryParameter` are converted to `URLQueryItem`s automatically. Only flat key-value structures are supported — nested objects and arrays are skipped, and `nil` values are omitted. Items are sorted by name, and commas in values are percent-encoded as `%2C`.
 
-Keys are **not** transformed by default. Override `keyEncodingStrategy` to change that:
+Keys are **not** transformed by default. Override `keyEncodingStrategy` to change that.
+`Date` values use `.deferredToDate` by default; override `dateEncodingStrategy` to match the server format:
 
 ```swift
 struct SearchQuery: QueryParameter {
     let keyword: String
     let perPage: Int
+    let createdAfter: Date
 
     var keyEncodingStrategy: JSONEncoder.KeyEncodingStrategy { .convertToSnakeCase }
+    var dateEncodingStrategy: JSONEncoder.DateEncodingStrategy { .iso8601 }
 }
-// → ?keyword=swift&per_page=20
+// → ?created_after=2026-08-20T00:00:00Z&keyword=swift&per_page=20
 ```
 
 ### 6. Headers
@@ -261,34 +264,18 @@ struct LegacyUserAPI: RequestAPI {
 
 ```swift
 struct UploadAPI: RequestAPI {
-    private static let sharedEncoder = JSONBodyEncoder(maxByteCount: 1_000_000)
+    private static let sharedEncoder = JSONBodyEncoder()
 
     var encoder: (any BodyEncoder)? { Self.sharedEncoder }
     ...
 }
 ```
 
-#### Body size limit
-
-With `JSONBodyEncoder(maxByteCount:)`, an encoded body over the limit throws `NetworkError.bodyTooLarge` and the request is never sent.
-
-```swift
-var encoder: (any BodyEncoder)? { JSONBodyEncoder(maxByteCount: 1_000_000) }
-```
-
-```swift
-do {
-    _ = try await networkService.request(UploadAPI(payload: payload))
-} catch NetworkError.bodyTooLarge(let byteCount, let limit) {
-    print("Body too large: \(byteCount) / \(limit)")
-}
-```
-
-> `Encodable` cannot report its size before encoding, so the check runs after encoding completes. It reliably prevents transmission, but it does not prevent the memory used during encoding itself.
-
 #### Custom encoders
 
 For policies beyond JSON — compression, signing, validation — implement `BodyEncoder` directly. Errors thrown here are preserved as the associated value of `NetworkError.encodingFailed`.
+
+Body-size limits are also a custom encoder policy, rather than a library default.
 
 ```swift
 struct SignedBodyEncoder: BodyEncoder {
@@ -336,10 +323,11 @@ NetworkLogger(
 | `.invalidURL` | `baseURL` + `path` + `query` could not form a valid URL. |
 | `.invalidResponse` | The response was not an `HTTPURLResponse`. |
 | `.encodingFailed(any Error & Sendable)` | Encoding the request body failed. |
-| `.bodyTooLarge(byteCount: Int, limit: Int)` | The encoded body exceeded the allowed size. |
 | `.decodingFailed(any Error & Sendable)` | Decoding the response body failed. |
-| `.httpError(statusCode: Int)` | The status code was outside `200...299`. |
+| `.httpError(statusCode: Int, data: HTTPErrorData)` | The status code was outside `200...299`; carries the response body and headers. |
 | `.unknown(any Error & Sendable)` | Transport or file-system failure. |
+
+`HTTPErrorData.body` and `HTTPErrorData.headers` are each `nil` when the corresponding response value is unavailable or empty.
 
 `NetworkError` conforms to `LocalizedError`, so `errorDescription` returns a human-readable message.
 
@@ -353,11 +341,12 @@ NetworkLogger(
 | `DownloadAPI` | Endpoint definition for file downloads. |
 | `QueryParameter` / `EmptyQuery` | Automatic `URLQueryItem` conversion. |
 | `HTTPHeader` / `HTTPHeaders` | Type-safe header construction. |
-| `BodyEncoder` / `JSONBodyEncoder` | Request body encoding strategy (with size limit). |
+| `BodyEncoder` / `JSONBodyEncoder` | Request body encoding strategy. |
 | `ResponseDecoder` / `JSONResponseDecoder` | Response decoding strategy. |
 | `HTTPMethod` | `GET`, `POST`, `PUT`, `DELETE`, `PATCH`. |
 | `DownloadEvent` | `.progress(TransferProgress)` / `.completed(URL)`. |
 | `TransferProgress` | Transferred bytes, total bytes, completion fraction. |
+| `HTTPErrorData` | Optional body and headers from an HTTP error response. |
 | `NetworkError` | Typed networking failures. |
 | `NetworkLogger` | `OSLog`-based logging. |
 
