@@ -12,16 +12,21 @@ import Foundation
 public protocol QueryParameter: Encodable, Sendable {
     /// 쿼리 키 변환 전략. 기본값은 `.useDefaultKeys`이며, 채택 타입에서 재정의할 수 있습니다.
     var keyEncodingStrategy: JSONEncoder.KeyEncodingStrategy { get }
+
+    /// 쿼리 날짜 변환 전략. 기본값은 `.deferredToDate`이며, 채택 타입에서 재정의할 수 있습니다.
+    var dateEncodingStrategy: JSONEncoder.DateEncodingStrategy { get }
 }
 
 public extension QueryParameter {
     var keyEncodingStrategy: JSONEncoder.KeyEncodingStrategy { .useDefaultKeys }
+    var dateEncodingStrategy: JSONEncoder.DateEncodingStrategy { .deferredToDate }
 
     /// 프로퍼티를 URLQueryItem 배열로 자동 변환합니다.
     /// 플랫한 key-value 구조만 지원합니다. 중첩 객체나 배열은 지원하지 않습니다.
     var queryItems: [URLQueryItem] {
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = keyEncodingStrategy
+        encoder.dateEncodingStrategy = dateEncodingStrategy
         guard let data = try? encoder.encode(self),
               let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return [] }
