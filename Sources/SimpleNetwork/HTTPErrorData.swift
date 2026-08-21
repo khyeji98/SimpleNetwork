@@ -24,7 +24,12 @@ public struct HTTPErrorData: Equatable, Sendable {
 extension HTTPErrorData {
     init(body: Data?, response: HTTPURLResponse) {
         let headers = response.allHeaderFields.reduce(into: [String: String]()) { result, field in
-            result[String(describing: field.key)] = String(describing: field.value)
+            guard
+                let key = field.key as? String,
+                let value = field.value as? String
+            else { return }
+
+            result[key.lowercased()] = value
         }
 
         self.init(body: body, headers: headers)

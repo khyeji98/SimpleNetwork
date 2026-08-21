@@ -34,13 +34,17 @@ final class URLSessionServiceHTTPErrorTests: XCTestCase {
     func test_비_2xx_응답이면_httpError에_상태코드와_바디와_헤더가_보존된다() async {
         let expectedStatusCode = 422
         let expectedBody = Data(#"{"code":"validation_failed"}"#.utf8)
-        let expectedHeaders = [
+        let responseHeaders = [
             "Content-Type": "application/json",
             "X-Request-ID": "request-123"
         ]
+        let expectedHeaders = [
+            "content-type": "application/json",
+            "x-request-id": "request-123"
+        ]
         MockURLProtocol.stub(
             status: expectedStatusCode,
-            headers: expectedHeaders,
+            headers: responseHeaders,
             chunks: [expectedBody]
         )
 

@@ -118,13 +118,17 @@ final class URLSessionServiceDownloadTests: XCTestCase {
     func test_비_2xx_다운로드_응답이면_httpError에_상태코드와_바디와_헤더가_보존되고_파일이_생성되지_않는다() async {
         let expectedStatusCode = 404
         let expectedBody = Data("not found".utf8)
-        let expectedHeaders = [
+        let responseHeaders = [
             "Content-Type": "text/plain",
             "X-Request-ID": "download-404"
         ]
+        let expectedHeaders = [
+            "content-type": "text/plain",
+            "x-request-id": "download-404"
+        ]
         MockURLProtocol.stub(
             status: expectedStatusCode,
-            headers: expectedHeaders,
+            headers: responseHeaders,
             chunks: [expectedBody]
         )
 
@@ -147,10 +151,11 @@ final class URLSessionServiceDownloadTests: XCTestCase {
     }
 
     func test_1MiB를_초과한_다운로드_오류_바디는_nil이고_헤더는_보존된다() async {
-        let expectedHeaders = ["X-Request-ID": "oversized-error"]
+        let responseHeaders = ["X-Request-ID": "oversized-error"]
+        let expectedHeaders = ["x-request-id": "oversized-error"]
         MockURLProtocol.stub(
             status: 413,
-            headers: expectedHeaders,
+            headers: responseHeaders,
             chunks: [Data(repeating: 0xAA, count: 1_048_577)]
         )
 
