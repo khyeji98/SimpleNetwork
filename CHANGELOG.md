@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0](https://github.com/khyeji98/SimpleNetwork/compare/v1.2.0...v2.0.0) (2026-08-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* URLSessionService의 encoder/decoder 기본값을 제거했습니다. 1.x와 동일하게 동작시키려면 JSONBodyEncoder(keyEncodingStrategy: .convertToSnakeCase)와 JSONResponseDecoder(keyDecodingStrategy: .convertFromSnakeCase)를 전달하세요. 자세한 내용은 MIGRATION.md를 참고하세요.
+
+### Features
+
+* 코딩 전략 명시 강제 및 API별 재정의 지원 ([#25](https://github.com/khyeji98/SimpleNetwork/issues/25)) ([84a6d76](https://github.com/khyeji98/SimpleNetwork/commit/84a6d765a06a2d38b637d0a7e08877fc6fdaf99f))
+
 ## [1.2.0](https://github.com/khyeji98/SimpleNetwork/compare/v1.1.0...v1.2.0) (2026-06-19)
 
 
