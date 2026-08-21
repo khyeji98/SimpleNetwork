@@ -14,7 +14,11 @@ final class URLSessionServiceDownloadTests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockURLProtocol.self]
         session = URLSession(configuration: config)
-        service = URLSessionService(session: session)
+        service = URLSessionService(
+            session: session,
+            encoder: JSONBodyEncoder(),
+            decoder: JSONResponseDecoder()
+        )
 
         tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("SimpleNetworkDownloadTests-\(UUID().uuidString)")
@@ -111,11 +115,21 @@ final class URLSessionServiceDownloadTests: XCTestCase {
 
     // MARK: - 에러 매핑
 
-    func test_404_응답이면_httpError가_throw되고_파일이_생성되지_않는다() async {
+    func test_비_2xx_다운로드_응답이면_httpError에_상태코드와_바디와_헤더가_보존되고_파일이_생성되지_않는다() async {
+        let expectedStatusCode = 404
+        let expectedBody = Data("not found".utf8)
+        let responseHeaders = [
+            "Content-Type": "text/plain",
+            "X-Request-ID": "download-404"
+        ]
+        let expectedHeaders = [
+            "content-type": "text/plain",
+            "x-request-id": "download-404"
+        ]
         MockURLProtocol.stub(
-            status: 404,
-            headers: [:],
-            chunks: [Data("not found".utf8)]
+            status: expectedStatusCode,
+            headers: responseHeaders,
+            chunks: [expectedBody]
         )
 
         let destination = tempDir.appendingPathComponent("notfound.bin")
@@ -126,11 +140,35 @@ final class URLSessionServiceDownloadTests: XCTestCase {
         guard let error = result.error else {
             return XCTFail("에러가 방출되지 않았습니다")
         }
-        guard case .httpError(let statusCode) = error as? NetworkError else {
+        guard case .httpError(let statusCode, let data) = error as? NetworkError else {
             return XCTFail("기대: NetworkError.httpError, 실제: \(error)")
         }
-        XCTAssertEqual(statusCode, 404)
+        XCTAssertEqual(statusCode, expectedStatusCode)
+        XCTAssertEqual(data.body, expectedBody)
+        XCTAssertEqual(data.headers, expectedHeaders)
         XCTAssertTrue(result.events.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
+    }
+
+    func test_1MiB를_초과한_다운로드_오류_바디는_nil이고_헤더는_보존된다() async {
+        let responseHeaders = ["X-Request-ID": "oversized-error"]
+        let expectedHeaders = ["x-request-id": "oversized-error"]
+        MockURLProtocol.stub(
+            status: 413,
+            headers: responseHeaders,
+            chunks: [Data(repeating: 0xAA, count: 1_048_577)]
+        )
+
+        let destination = tempDir.appendingPathComponent("oversized-error.bin")
+        let result = await collectEvents(service.download(makeAPI(destination: destination)))
+
+        guard case .httpError(let statusCode, let data) = result.error as? NetworkError else {
+            return XCTFail("기대: NetworkError.httpError, 실제: \(String(describing: result.error))")
+        }
+
+        XCTAssertEqual(statusCode, 413)
+        XCTAssertNil(data.body)
+        XCTAssertEqual(data.headers, expectedHeaders)
         XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
     }
 

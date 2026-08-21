@@ -1,5 +1,6 @@
 .DS_Store
 /.build
+/.swiftpm
 /Packages
 /checks
 /xcuserdata
@@ -11,3 +12,6 @@ package-lock.json
 # Claude
 CLAUDE.md
 .claude/
+
+# Handoff
+.handoff/

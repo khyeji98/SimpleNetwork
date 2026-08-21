@@ -22,7 +22,7 @@ final class RequestAPITests: XCTestCase {
             uniquingKeysWith: { _, last in last }
         )
         XCTAssertEqual(queryDict["page"], "1")
-        XCTAssertEqual(queryDict["per_page"], "20")
+        XCTAssertEqual(queryDict["perPage"], "20")
     }
 
     func test_query가_nil이면_쿼리_없는_URL() {
@@ -50,6 +50,18 @@ final class RequestAPITests: XCTestCase {
         let api = MockGetAPI()
 
         XCTAssertNil(api.query)
+    }
+
+    func test_encoder_기본값은_nil() {
+        let api = MockGetAPI()
+
+        XCTAssertNil(api.encoder)
+    }
+
+    func test_decoder_기본값은_nil() {
+        let api = MockGetAPI()
+
+        XCTAssertNil(api.decoder)
     }
 
     // MARK: - HTTPHeaders 타입

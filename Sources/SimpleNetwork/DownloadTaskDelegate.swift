@@ -62,7 +62,13 @@ final class DownloadTaskDelegate: NSObject, URLSessionDownloadDelegate, @uncheck
 
         guard (200...299).contains(httpResponse.statusCode) else {
             logger.error("다운로드 응답 실패 [\(httpResponse.statusCode)] \(httpResponse.url?.absoluteString ?? "")")
-            finish(throwing: NetworkError.httpError(statusCode: httpResponse.statusCode))
+            finish(throwing: NetworkError.httpError(
+                statusCode: httpResponse.statusCode,
+                data: HTTPErrorData(
+                    body: errorBody(at: location),
+                    response: httpResponse
+                )
+            ))
             return
         }
 
@@ -119,4 +125,18 @@ final class DownloadTaskDelegate: NSObject, URLSessionDownloadDelegate, @uncheck
     private func expectedTotal(_ value: Int64) -> Int64? {
         value > 0 ? value : nil
     }
+
+    private func errorBody(at location: URL) -> Data? {
+        guard
+            let values = try? location.resourceValues(forKeys: [.fileSizeKey]),
+            let fileSize = values.fileSize,
+            fileSize <= Constant.maxHTTPErrorBodyByteCount
+        else { return nil }
+
+        return try? Data(contentsOf: location)
+    }
+}
+
+private enum Constant {
+    static let maxHTTPErrorBodyByteCount = 1_048_576
 }

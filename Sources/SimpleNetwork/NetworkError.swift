@@ -11,10 +11,9 @@ import Foundation
 public enum NetworkError: Error, Sendable {
     case invalidURL
     case invalidResponse
-    case encodingFailed
-    case noData
+    case encodingFailed(any Error & Sendable)
     case decodingFailed(any Error & Sendable)
-    case httpError(statusCode: Int)
+    case httpError(statusCode: Int, data: HTTPErrorData)
     case unknown(any Error & Sendable)
 }
 
@@ -25,13 +24,11 @@ extension NetworkError: LocalizedError {
             return "유효하지 않은 URL입니다."
         case .invalidResponse:
             return "유효하지 않은 URLResponse입니다."
-        case .encodingFailed:
-            return "요청 데이터 인코딩에 실패했습니다."
-        case .noData:
-            return "서버로부터 데이터를 받지 못했습니다."
+        case .encodingFailed(let error):
+            return "요청 데이터 인코딩에 실패했습니다: \(error.localizedDescription)"
         case .decodingFailed(let error):
             return "응답 데이터 디코딩에 실패했습니다: \(error.localizedDescription)"
-        case .httpError(let statusCode):
+        case .httpError(let statusCode, _):
             return "HTTP 에러가 발생했습니다. 상태 코드: \(statusCode)"
         case .unknown(let error):
             return "알 수 없는 에러가 발생했습니다: \(error.localizedDescription)"

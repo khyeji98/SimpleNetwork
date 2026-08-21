@@ -28,6 +28,34 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var _stub: Stub?
+    nonisolated(unsafe) private static var _requests: [URLRequest] = []
+
+    /// 스텁에 도달한 요청 목록. 요청이 실제로 전송되었는지 검증할 때 사용한다.
+    static var requests: [URLRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _requests
+    }
+
+    /// URLProtocol 경로에서는 `httpBody`가 `httpBodyStream`으로 옮겨지므로 양쪽을 모두 확인한다.
+    static func bodyData(of request: URLRequest) -> Data? {
+        if let body = request.httpBody { return body }
+
+        guard let stream = request.httpBodyStream else { return nil }
+
+        stream.open()
+        defer { stream.close() }
+
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: buffer.count)
+            guard read > 0 else { break }
+
+            data.append(buffer, count: read)
+        }
+        return data
+    }
 
     static func stub(
         status: Int = 200,
@@ -64,6 +92,13 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         _stub = nil
+        _requests = []
+    }
+
+    private static func record(_ request: URLRequest) {
+        lock.lock()
+        defer { lock.unlock() }
+        _requests.append(request)
     }
 
     private static func currentStub() -> Stub? {
@@ -81,6 +116,8 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
 
     override func startLoading() {
         guard let client else { return }
+
+        Self.record(request)
 
         guard let stub = Self.currentStub() else {
             client.urlProtocol(self, didFailWithError: URLError(.badServerResponse))

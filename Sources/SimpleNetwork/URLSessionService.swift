@@ -10,34 +10,62 @@ import Foundation
 /// URLSession을 사용하여 네트워크 요청을 수행하는 구현체입니다.
 ///
 /// 모든 저장 프로퍼티가 `let`이며 내부 상태를 변경하지 않으므로 동시성 안전합니다.
-/// `JSONDecoder`가 non-Sendable 클래스이지만 인스턴스를 외부와 공유하지 않으므로
-/// `@unchecked Sendable`로 선언합니다.
-public final class URLSessionService: NetworkService, @unchecked Sendable {
+public final class URLSessionService: NetworkService {
     private let session: URLSession
-    private let decoder: JSONDecoder
+    private let encoder: any BodyEncoder
+    private let decoder: any ResponseDecoder
     private let logger: NetworkLogger
 
     /// URLSessionService를 초기화합니다.
+    ///
+    /// `encoder`/`decoder`에는 기본값이 없습니다. 키 변환 전략은 서버 스펙에 따라 달라지므로
+    /// 라이브러리가 임의로 정하지 않고 호출부가 명시하도록 합니다.
+    /// 여기 지정한 값은 서비스 기본값이며, `RequestAPI`가 재정의하면 해당 API에는 그쪽이 우선합니다.
+    ///
+    /// 키를 변환하지 않으려면 `JSONBodyEncoder()` / `JSONResponseDecoder()`를 그대로 전달하세요.
     /// - Parameters:
     ///   - session: 사용할 URLSession 인스턴스 (기본값: .shared)
-    ///   - decoder: JSON 디코딩에 사용할 JSONDecoder (기본값: snake_case 변환)
+    ///   - encoder: 요청 바디 인코딩에 사용할 기본 인코더
+    ///   - decoder: 응답 디코딩에 사용할 기본 디코더
     ///   - logger: 통신 로그를 기록할 NetworkLogger (기본값: 활성화된 기본 로거)
     public init(
         session: URLSession = .shared,
-        decoder: JSONDecoder? = nil,
+        encoder: any BodyEncoder,
+        decoder: any ResponseDecoder,
         logger: NetworkLogger = NetworkLogger()
     ) {
         self.session = session
+        self.encoder = encoder
+        self.decoder = decoder
         self.logger = logger
-
-        if let decoder = decoder {
-            self.decoder = decoder
-        } else {
-            let defaultDecoder = JSONDecoder()
-            defaultDecoder.keyDecodingStrategy = .convertFromSnakeCase
-            self.decoder = defaultDecoder
-        }
     }
+
+    /// 1.x에서 인코더/디코더를 생략하던 호출을 가로채 마이그레이션을 안내합니다.
+    ///
+    /// 1.x는 생략 시 snake_case 변환을 적용했습니다. 그대로 두면 빌드는 성공한 채
+    /// 런타임 디코딩만 깨지므로, 호출 자체를 컴파일 에러로 막습니다.
+    @available(*, unavailable, message: """
+        2.0부터 encoder/decoder를 명시해야 합니다. \
+        1.x와 동일하게 동작시키려면 encoder: JSONBodyEncoder(keyEncodingStrategy: .convertToSnakeCase), \
+        decoder: JSONResponseDecoder(keyDecodingStrategy: .convertFromSnakeCase)를 전달하세요. \
+        키를 변환하지 않으려면 JSONBodyEncoder(), JSONResponseDecoder()를 전달하세요.
+        """)
+    public convenience init(
+        session: URLSession = .shared,
+        logger: NetworkLogger = NetworkLogger()
+    ) { fatalError("unavailable") }
+
+    /// 1.x의 `JSONEncoder`/`JSONDecoder` 직접 주입 호출을 가로채 마이그레이션을 안내합니다.
+    @available(*, unavailable, message: """
+        JSONEncoder/JSONDecoder 직접 주입은 BodyEncoder/ResponseDecoder로 대체되었습니다. \
+        JSONBodyEncoder(keyEncodingStrategy:) / JSONResponseDecoder(keyDecodingStrategy:)를 사용하세요.
+        """)
+    public convenience init(
+        session: URLSession = .shared,
+        encoder: JSONEncoder,
+        decoder: JSONDecoder,
+        logger: NetworkLogger = NetworkLogger()
+    ) { fatalError("unavailable") }
 
     public func download<API: DownloadAPI>(
         _ api: API
@@ -123,16 +151,22 @@ public final class URLSessionService: NetworkService, @unchecked Sendable {
         
         // 2. 바디 설정
         if let body = api.body {
+            let bodyEncoder = api.encoder ?? encoder
             do {
-                let encoder = JSONEncoder()
-                encoder.keyEncodingStrategy = .convertToSnakeCase // 기본값 설정 (필요시 주입받도록 개선 가능)
-                let bodyData = try encoder.encode(body)
-                urlRequest.httpBody = bodyData
+                urlRequest.httpBody = try bodyEncoder.encode(body)
                 if urlRequest.value(forHTTPHeaderField: "Content-Type") == nil {
                     urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 }
             } catch {
-                throw NetworkError.encodingFailed
+                let networkError: NetworkError
+                if let thrownNetworkError = error as? NetworkError,
+                   case .encodingFailed = thrownNetworkError {
+                    networkError = thrownNetworkError
+                } else {
+                    networkError = .encodingFailed(error)
+                }
+                logger.error("요청 바디 인코딩 실패: \(networkError.localizedDescription)")
+                throw networkError
             }
         }
 
@@ -151,14 +185,18 @@ public final class URLSessionService: NetworkService, @unchecked Sendable {
 
         guard (200...299).contains(httpResponse.statusCode) else {
             logger.error("응답 실패 [\(httpResponse.statusCode)] \(url.absoluteString) - \(String(data: data, encoding: .utf8) ?? "<\(data.count) bytes>")")
-            throw NetworkError.httpError(statusCode: httpResponse.statusCode)
+            throw NetworkError.httpError(
+                statusCode: httpResponse.statusCode,
+                data: HTTPErrorData(body: data, response: httpResponse)
+            )
         }
 
         logger.info("응답 성공 [\(httpResponse.statusCode)] \(url.absoluteString)")
         logger.debug("응답 본문: \(String(data: data, encoding: .utf8) ?? "<\(data.count) bytes>")")
 
+        let responseDecoder = api.decoder ?? decoder
         do {
-            let decodedResponse = try decoder.decode(API.Response.self, from: data)
+            let decodedResponse = try responseDecoder.decode(API.Response.self, from: data)
             return decodedResponse
         } catch {
             logger.error("디코딩 실패: \(API.Response.self) - \(error.localizedDescription)")
