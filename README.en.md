@@ -188,18 +188,15 @@ Task {
 Types conforming to `QueryParameter` are converted to `URLQueryItem`s automatically. Only flat key-value structures are supported — nested objects and arrays are skipped, and `nil` values are omitted. Items are sorted by name, and commas in values are percent-encoded as `%2C`.
 
 Keys are **not** transformed by default. Override `keyEncodingStrategy` to change that.
-`Date` values use `.deferredToDate` by default; override `dateEncodingStrategy` to match the server format:
 
 ```swift
 struct SearchQuery: QueryParameter {
     let keyword: String
     let perPage: Int
-    let createdAfter: Date
 
     var keyEncodingStrategy: JSONEncoder.KeyEncodingStrategy { .convertToSnakeCase }
-    var dateEncodingStrategy: JSONEncoder.DateEncodingStrategy { .iso8601 }
 }
-// → ?created_after=2026-08-20T00:00:00Z&keyword=swift&per_page=20
+// → ?keyword=swift&per_page=20
 ```
 
 ### 6. Headers
@@ -327,7 +324,7 @@ NetworkLogger(
 | `.httpError(statusCode: Int, data: HTTPErrorData)` | The status code was outside `200...299`; carries the response body and headers. |
 | `.unknown(any Error & Sendable)` | Transport or file-system failure. |
 
-`HTTPErrorData.body` and `HTTPErrorData.headers` are each `nil` when the corresponding response value is unavailable or empty.
+`HTTPErrorData.body` and `HTTPErrorData.headers` are each `nil` when the corresponding response value is unavailable or empty. Error response headers only retain String keys and values, and header names are normalized to lowercase.
 For memory safety, download error bodies larger than 1 MiB are returned as `nil` while headers remain available.
 
 `NetworkError` conforms to `LocalizedError`, so `errorDescription` returns a human-readable message.

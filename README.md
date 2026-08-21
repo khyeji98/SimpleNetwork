@@ -188,18 +188,15 @@ Task {
 `QueryParameter`를 채택한 타입은 자동으로 `URLQueryItem` 배열로 변환됩니다. 플랫한 key-value 구조만 지원하며 중첩 객체와 배열은 제외되고, `nil` 값은 생략됩니다. 항목은 이름순으로 정렬되며, 값에 포함된 쉼표는 `%2C`로 퍼센트 인코딩됩니다.
 
 키는 기본적으로 **변환되지 않습니다**. 변환이 필요하면 `keyEncodingStrategy`를 재정의하세요.
-`Date` 값의 기본 전략은 `.deferredToDate`이며, 서버 포맷에 맞게 `dateEncodingStrategy`를 재정의할 수 있습니다.
 
 ```swift
 struct SearchQuery: QueryParameter {
     let keyword: String
     let perPage: Int
-    let createdAfter: Date
 
     var keyEncodingStrategy: JSONEncoder.KeyEncodingStrategy { .convertToSnakeCase }
-    var dateEncodingStrategy: JSONEncoder.DateEncodingStrategy { .iso8601 }
 }
-// → ?created_after=2026-08-20T00:00:00Z&keyword=swift&per_page=20
+// → ?keyword=swift&per_page=20
 ```
 
 ### 6. 헤더
@@ -327,7 +324,7 @@ NetworkLogger(
 | `.httpError(statusCode: Int, data: HTTPErrorData)` | 상태 코드가 `200...299` 범위를 벗어난 경우. 응답 바디와 헤더를 함께 전달 |
 | `.unknown(any Error & Sendable)` | 전송 또는 파일시스템 단계에서 실패한 경우 |
 
-`HTTPErrorData.body`와 `HTTPErrorData.headers`는 응답 값이 없거나 비어 있으면 각각 `nil`입니다.
+`HTTPErrorData.body`와 `HTTPErrorData.headers`는 응답 값이 없거나 비어 있으면 각각 `nil`입니다. 오류 응답 헤더는 String 키·값만 수집하며, 헤더 이름은 소문자로 정규화됩니다.
 다운로드 오류 바디는 메모리 안전을 위해 1 MiB를 초과하면 `nil`로 전달되며 헤더는 그대로 보존됩니다.
 
 `NetworkError`는 `LocalizedError`를 채택하므로 `errorDescription`으로 사람이 읽을 수 있는 메시지를 얻을 수 있습니다.
