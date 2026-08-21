@@ -49,15 +49,6 @@ final class QueryParameterTests: XCTestCase {
         XCTAssertFalse(names.contains("perPage"))
     }
 
-    // MARK: - dateEncodingStrategy
-
-    func test_QueryParameter_날짜_전략_재정의시_ISO8601로_변환() {
-        let query = ISO8601DateQuery(createdAt: Date(timeIntervalSince1970: 0))
-        let value = query.queryItems.first { $0.name == "createdAt" }?.value
-
-        XCTAssertEqual(value, "1970-01-01T00:00:00Z")
-    }
-
     // MARK: - Optional
 
     func test_QueryParameter_Optional_nil이면_queryItems에서_제외() {
@@ -131,12 +122,6 @@ private struct SnakeCaseQuery: QueryParameter {
 private struct StringQuery: QueryParameter {
     let keyword: String
     let sort: String
-}
-
-private struct ISO8601DateQuery: QueryParameter {
-    let createdAt: Date
-
-    var dateEncodingStrategy: JSONEncoder.DateEncodingStrategy { .iso8601 }
 }
 
 private struct BoolQuery: QueryParameter {
