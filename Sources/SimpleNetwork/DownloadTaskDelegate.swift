@@ -65,7 +65,7 @@ final class DownloadTaskDelegate: NSObject, URLSessionDownloadDelegate, @uncheck
             finish(throwing: NetworkError.httpError(
                 statusCode: httpResponse.statusCode,
                 data: HTTPErrorData(
-                    body: try? Data(contentsOf: location),
+                    body: errorBody(at: location),
                     response: httpResponse
                 )
             ))
@@ -125,4 +125,18 @@ final class DownloadTaskDelegate: NSObject, URLSessionDownloadDelegate, @uncheck
     private func expectedTotal(_ value: Int64) -> Int64? {
         value > 0 ? value : nil
     }
+
+    private func errorBody(at location: URL) -> Data? {
+        guard
+            let values = try? location.resourceValues(forKeys: [.fileSizeKey]),
+            let fileSize = values.fileSize,
+            fileSize <= Constant.maxHTTPErrorBodyByteCount
+        else { return nil }
+
+        return try? Data(contentsOf: location)
+    }
+}
+
+private enum Constant {
+    static let maxHTTPErrorBodyByteCount = 1_048_576
 }

@@ -146,6 +146,27 @@ final class URLSessionServiceDownloadTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
     }
 
+    func test_1MiB를_초과한_다운로드_오류_바디는_nil이고_헤더는_보존된다() async {
+        let expectedHeaders = ["X-Request-ID": "oversized-error"]
+        MockURLProtocol.stub(
+            status: 413,
+            headers: expectedHeaders,
+            chunks: [Data(repeating: 0xAA, count: 1_048_577)]
+        )
+
+        let destination = tempDir.appendingPathComponent("oversized-error.bin")
+        let result = await collectEvents(service.download(makeAPI(destination: destination)))
+
+        guard case .httpError(let statusCode, let data) = result.error as? NetworkError else {
+            return XCTFail("기대: NetworkError.httpError, 실제: \(String(describing: result.error))")
+        }
+
+        XCTAssertEqual(statusCode, 413)
+        XCTAssertNil(data.body)
+        XCTAssertEqual(data.headers, expectedHeaders)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
+    }
+
     func test_전송_중_에러_발생시_unknown_에러로_종료되고_부분_파일이_삭제된다() async {
         let firstChunk = Data(repeating: 0xAA, count: 16 * 1024)
         MockURLProtocol.stub(

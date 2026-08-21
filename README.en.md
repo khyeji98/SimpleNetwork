@@ -328,6 +328,7 @@ NetworkLogger(
 | `.unknown(any Error & Sendable)` | Transport or file-system failure. |
 
 `HTTPErrorData.body` and `HTTPErrorData.headers` are each `nil` when the corresponding response value is unavailable or empty.
+For memory safety, download error bodies larger than 1 MiB are returned as `nil` while headers remain available.
 
 `NetworkError` conforms to `LocalizedError`, so `errorDescription` returns a human-readable message.
 

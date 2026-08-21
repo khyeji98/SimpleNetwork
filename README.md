@@ -328,6 +328,7 @@ NetworkLogger(
 | `.unknown(any Error & Sendable)` | 전송 또는 파일시스템 단계에서 실패한 경우 |
 
 `HTTPErrorData.body`와 `HTTPErrorData.headers`는 응답 값이 없거나 비어 있으면 각각 `nil`입니다.
+다운로드 오류 바디는 메모리 안전을 위해 1 MiB를 초과하면 `nil`로 전달되며 헤더는 그대로 보존됩니다.
 
 `NetworkError`는 `LocalizedError`를 채택하므로 `errorDescription`으로 사람이 읽을 수 있는 메시지를 얻을 수 있습니다.
 
