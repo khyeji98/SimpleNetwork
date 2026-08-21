@@ -158,7 +158,13 @@ public final class URLSessionService: NetworkService {
                     urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 }
             } catch {
-                let networkError = error as? NetworkError ?? .encodingFailed(error)
+                let networkError: NetworkError
+                if let thrownNetworkError = error as? NetworkError,
+                   case .encodingFailed = thrownNetworkError {
+                    networkError = thrownNetworkError
+                } else {
+                    networkError = .encodingFailed(error)
+                }
                 logger.error("요청 바디 인코딩 실패: \(networkError.localizedDescription)")
                 throw networkError
             }

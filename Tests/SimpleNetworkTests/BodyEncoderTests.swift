@@ -113,6 +113,28 @@ final class BodyEncoderTests: XCTestCase {
         }
     }
 
+    func test_커스텀_인코더가_던진_NetworkError가_encodingFailed로_래핑된다() async {
+        MockURLProtocol.stub(chunks: [mockBodyResponseData])
+        let service = URLSessionService(
+            session: session,
+            encoder: JSONBodyEncoder(),
+            decoder: JSONResponseDecoder(),
+            logger: NetworkLogger(isEnabled: false)
+        )
+
+        do {
+            _ = try await service.request(MockNetworkErrorEncoderAPI())
+            XCTFail("에러가 발생하지 않았습니다")
+        } catch {
+            guard case .encodingFailed(let underlying) = error as? NetworkError else {
+                return XCTFail("encodingFailed가 아닙니다: \(error)")
+            }
+            guard case .invalidURL = underlying as? NetworkError else {
+                return XCTFail("보존된 에러가 invalidURL이 아닙니다: \(underlying)")
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     private var mockBodyResponseData: Data {
@@ -141,6 +163,12 @@ private enum MockEncoderError: Error, Equatable {
 private struct FailingEncoder: BodyEncoder {
     func encode(_ body: any Encodable & Sendable) throws -> Data {
         throw MockEncoderError.rejected
+    }
+}
+
+private struct NetworkErrorEncoder: BodyEncoder {
+    func encode(_ body: any Encodable & Sendable) throws -> Data {
+        throw NetworkError.invalidURL
     }
 }
 
@@ -186,4 +214,15 @@ private struct MockFailingEncoderAPI: RequestAPI {
     var path: String { "/v1/users" }
     var body: (any Encodable & Sendable)? { MockBody(userName: "hyeji") }
     var encoder: (any BodyEncoder)? { FailingEncoder() }
+}
+
+private struct MockNetworkErrorEncoderAPI: RequestAPI {
+    typealias Query = EmptyQuery
+    typealias Response = MockBody
+
+    var httpMethod: HTTPMethod { .post }
+    var baseURL: String { "https://api.example.com" }
+    var path: String { "/v1/users" }
+    var body: (any Encodable & Sendable)? { MockBody(userName: "hyeji") }
+    var encoder: (any BodyEncoder)? { NetworkErrorEncoder() }
 }
