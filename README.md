@@ -31,14 +31,14 @@
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/khyeji98/SimpleNetwork.git", .upToNextMajor(from: "1.2.0"))
+    .package(url: "https://github.com/khyeji98/SimpleNetwork.git", .upToNextMajor(from: "2.0.0"))
 ]
 ```
 
 또는 Xcode에서 직접 추가합니다.
 1. **File** > **Add Package Dependencies...**
 2. 저장소 URL 입력: `https://github.com/khyeji98/SimpleNetwork.git`
-3. 버전 규칙 선택 (예: Up to Next Major Version `1.2.0`)
+3. 버전 규칙 선택 (예: Up to Next Major Version `2.0.0`)
 
 ## 사용법
 

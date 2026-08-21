@@ -12,7 +12,7 @@
 
 ### ① `URLSessionService` 생성 — 컴파일 에러
 
-`encoder`/`decoder`에서 기본값을 제거했습니다. 1.x에서 생략하던 호출은 이제 컴파일되지 않습니다.
+2.0에서는 새 `encoder`를 추가하고 `decoder`의 기본값을 제거해 둘 다 명시해야 합니다. 1.x에서 `decoder`를 생략하던 호출은 이제 컴파일되지 않습니다.
 
 ```swift
 // 1.x — 2.0에서 컴파일 에러
@@ -40,20 +40,17 @@ let service = URLSessionService(
 
 기본값을 되살리지 않은 것은 의도된 선택입니다. 올바른 전략은 서버 스펙에 달려 있어 라이브러리가 대신 정할 수 없고, 어느 쪽을 기본값으로 삼든 나머지 절반의 사용자는 런타임에야 문제를 발견하게 됩니다.
 
-### ② `JSONEncoder`/`JSONDecoder` 직접 주입 — 컴파일 에러
+### ② `JSONDecoder` 직접 주입 — 컴파일 에러
 
-인코딩·디코딩이 `BodyEncoder`/`ResponseDecoder` 프로토콜로 추상화되었습니다. `URLSessionService`가 `@unchecked Sendable` 없이 동시성 안전해집니다.
+요청 인코딩은 새 `BodyEncoder` 추상화로 설정할 수 있고, 1.x에서 직접 주입하던 `JSONDecoder`는 `ResponseDecoder` 추상화로 대체되었습니다. 그 결과 `URLSessionService`가 `@unchecked Sendable` 없이 동시성 안전해집니다.
 
 ```swift
 // 1.x
-let encoder = JSONEncoder()
-encoder.keyEncodingStrategy = .convertToSnakeCase
-
 let decoder = JSONDecoder()
 decoder.keyDecodingStrategy = .convertFromSnakeCase
 decoder.dateDecodingStrategy = .iso8601
 
-let service = URLSessionService(encoder: encoder, decoder: decoder)
+let service = URLSessionService(decoder: decoder)
 ```
 
 ```swift

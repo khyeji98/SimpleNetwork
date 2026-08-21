@@ -12,7 +12,7 @@ If this change slips through, it surfaces only as a runtime decoding failure aft
 
 ### ① Creating `URLSessionService` — compile error
 
-The defaults for `encoder`/`decoder` were removed. Calls that omitted them in 1.x no longer compile.
+2.0 adds an `encoder` and removes the `decoder` default, so both must be specified. Calls that omitted the `decoder` in 1.x no longer compile.
 
 ```swift
 // 1.x — compile error in 2.0
@@ -40,20 +40,17 @@ let service = URLSessionService(
 
 Not restoring a default is deliberate. The correct strategy depends on the server, so the library cannot choose for you — and whichever default it picked, the other half of its users would discover the problem only at runtime.
 
-### ② Injecting `JSONEncoder`/`JSONDecoder` directly — compile error
+### ② Injecting `JSONDecoder` directly — compile error
 
-Encoding and decoding are now abstracted behind the `BodyEncoder`/`ResponseDecoder` protocols, which makes `URLSessionService` concurrency-safe without `@unchecked Sendable`.
+Request encoding is now configurable through the new `BodyEncoder` abstraction, while the `JSONDecoder` injected directly in 1.x has been replaced by the `ResponseDecoder` abstraction. This makes `URLSessionService` concurrency-safe without `@unchecked Sendable`.
 
 ```swift
 // 1.x
-let encoder = JSONEncoder()
-encoder.keyEncodingStrategy = .convertToSnakeCase
-
 let decoder = JSONDecoder()
 decoder.keyDecodingStrategy = .convertFromSnakeCase
 decoder.dateDecodingStrategy = .iso8601
 
-let service = URLSessionService(encoder: encoder, decoder: decoder)
+let service = URLSessionService(decoder: decoder)
 ```
 
 ```swift

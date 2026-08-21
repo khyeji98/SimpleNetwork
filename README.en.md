@@ -31,14 +31,14 @@ Add `SimpleNetwork` as a dependency in your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/khyeji98/SimpleNetwork.git", .upToNextMajor(from: "1.2.0"))
+    .package(url: "https://github.com/khyeji98/SimpleNetwork.git", .upToNextMajor(from: "2.0.0"))
 ]
 ```
 
 Or add it via Xcode:
 1. **File** > **Add Package Dependencies...**
 2. Enter the repository URL: `https://github.com/khyeji98/SimpleNetwork.git`
-3. Choose a version rule (e.g. Up to Next Major Version `1.2.0`)
+3. Choose a version rule (e.g. Up to Next Major Version `2.0.0`)
 
 ## Usage
 
