@@ -36,25 +36,6 @@ final class BodyEncoderTests: XCTestCase {
         XCTAssertEqual(String(data: data, encoding: .utf8), #"{"user_name":"hyeji"}"#)
     }
 
-    func test_maxByteCount_이내면_인코딩에_성공한다() throws {
-        let encoder = JSONBodyEncoder(maxByteCount: 100)
-        let data = try encoder.encode(MockBody(userName: "hyeji"))
-
-        XCTAssertEqual(data.count, 20)
-    }
-
-    func test_maxByteCount를_초과하면_bodyTooLarge를_던진다() {
-        let encoder = JSONBodyEncoder(maxByteCount: 10)
-
-        XCTAssertThrowsError(try encoder.encode(MockBody(userName: "hyeji"))) { error in
-            guard case .bodyTooLarge(let byteCount, let limit) = error as? NetworkError else {
-                return XCTFail("bodyTooLarge가 아닙니다: \(error)")
-            }
-            XCTAssertEqual(byteCount, 20)
-            XCTAssertEqual(limit, 10)
-        }
-    }
-
     // MARK: - JSONResponseDecoder 단위
 
     func test_키_디코딩_전략이_적용된다() throws {
@@ -111,27 +92,6 @@ final class BodyEncoderTests: XCTestCase {
     }
 
     // MARK: - 에러 전파
-
-    func test_크기_제한을_초과하면_요청이_전송되지_않는다() async {
-        MockURLProtocol.stub(chunks: [mockBodyResponseData])
-        let service = URLSessionService(
-            session: session,
-            encoder: JSONBodyEncoder(),
-            decoder: JSONResponseDecoder(),
-            logger: NetworkLogger(isEnabled: false)
-        )
-
-        do {
-            _ = try await service.request(MockSizeLimitedAPI())
-            XCTFail("에러가 발생하지 않았습니다")
-        } catch {
-            guard case .bodyTooLarge = error as? NetworkError else {
-                return XCTFail("bodyTooLarge가 아닙니다: \(error)")
-            }
-        }
-
-        XCTAssertTrue(MockURLProtocol.requests.isEmpty)
-    }
 
     func test_커스텀_인코더가_던진_에러가_encodingFailed로_보존된다() async {
         MockURLProtocol.stub(chunks: [mockBodyResponseData])
@@ -215,17 +175,6 @@ private struct MockCustomDecoderAPI: RequestAPI {
     var decoder: (any ResponseDecoder)? {
         JSONResponseDecoder(keyDecodingStrategy: .convertFromSnakeCase)
     }
-}
-
-private struct MockSizeLimitedAPI: RequestAPI {
-    typealias Query = EmptyQuery
-    typealias Response = MockBody
-
-    var httpMethod: HTTPMethod { .post }
-    var baseURL: String { "https://api.example.com" }
-    var path: String { "/v1/users" }
-    var body: (any Encodable & Sendable)? { MockBody(userName: "hyeji") }
-    var encoder: (any BodyEncoder)? { JSONBodyEncoder(maxByteCount: 5) }
 }
 
 private struct MockFailingEncoderAPI: RequestAPI {
