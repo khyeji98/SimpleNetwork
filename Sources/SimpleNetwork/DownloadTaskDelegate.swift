@@ -62,7 +62,13 @@ final class DownloadTaskDelegate: NSObject, URLSessionDownloadDelegate, @uncheck
 
         guard (200...299).contains(httpResponse.statusCode) else {
             logger.error("다운로드 응답 실패 [\(httpResponse.statusCode)] \(httpResponse.url?.absoluteString ?? "")")
-            finish(throwing: NetworkError.httpError(statusCode: httpResponse.statusCode))
+            finish(throwing: NetworkError.httpError(
+                statusCode: httpResponse.statusCode,
+                data: HTTPErrorData(
+                    body: try? Data(contentsOf: location),
+                    response: httpResponse
+                )
+            ))
             return
         }
 

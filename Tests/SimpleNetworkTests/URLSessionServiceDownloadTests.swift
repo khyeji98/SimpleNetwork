@@ -115,11 +115,17 @@ final class URLSessionServiceDownloadTests: XCTestCase {
 
     // MARK: - 에러 매핑
 
-    func test_404_응답이면_httpError가_throw되고_파일이_생성되지_않는다() async {
+    func test_비_2xx_다운로드_응답이면_httpError에_상태코드와_바디와_헤더가_보존되고_파일이_생성되지_않는다() async {
+        let expectedStatusCode = 404
+        let expectedBody = Data("not found".utf8)
+        let expectedHeaders = [
+            "Content-Type": "text/plain",
+            "X-Request-ID": "download-404"
+        ]
         MockURLProtocol.stub(
-            status: 404,
-            headers: [:],
-            chunks: [Data("not found".utf8)]
+            status: expectedStatusCode,
+            headers: expectedHeaders,
+            chunks: [expectedBody]
         )
 
         let destination = tempDir.appendingPathComponent("notfound.bin")
@@ -130,10 +136,12 @@ final class URLSessionServiceDownloadTests: XCTestCase {
         guard let error = result.error else {
             return XCTFail("에러가 방출되지 않았습니다")
         }
-        guard case .httpError(let statusCode) = error as? NetworkError else {
+        guard case .httpError(let statusCode, let data) = error as? NetworkError else {
             return XCTFail("기대: NetworkError.httpError, 실제: \(error)")
         }
-        XCTAssertEqual(statusCode, 404)
+        XCTAssertEqual(statusCode, expectedStatusCode)
+        XCTAssertEqual(data.body, expectedBody)
+        XCTAssertEqual(data.headers, expectedHeaders)
         XCTAssertTrue(result.events.isEmpty)
         XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
     }

@@ -14,7 +14,7 @@ public enum NetworkError: Error, Sendable {
     case encodingFailed(any Error & Sendable)
     case bodyTooLarge(byteCount: Int, limit: Int)
     case decodingFailed(any Error & Sendable)
-    case httpError(statusCode: Int)
+    case httpError(statusCode: Int, data: HTTPErrorData)
     case unknown(any Error & Sendable)
 }
 
@@ -31,7 +31,7 @@ extension NetworkError: LocalizedError {
             return "요청 바디가 너무 큽니다. \(byteCount)바이트로 제한 \(limit)바이트를 초과했습니다."
         case .decodingFailed(let error):
             return "응답 데이터 디코딩에 실패했습니다: \(error.localizedDescription)"
-        case .httpError(let statusCode):
+        case .httpError(let statusCode, _):
             return "HTTP 에러가 발생했습니다. 상태 코드: \(statusCode)"
         case .unknown(let error):
             return "알 수 없는 에러가 발생했습니다: \(error.localizedDescription)"

@@ -179,7 +179,10 @@ public final class URLSessionService: NetworkService {
 
         guard (200...299).contains(httpResponse.statusCode) else {
             logger.error("응답 실패 [\(httpResponse.statusCode)] \(url.absoluteString) - \(String(data: data, encoding: .utf8) ?? "<\(data.count) bytes>")")
-            throw NetworkError.httpError(statusCode: httpResponse.statusCode)
+            throw NetworkError.httpError(
+                statusCode: httpResponse.statusCode,
+                data: HTTPErrorData(body: data, response: httpResponse)
+            )
         }
 
         logger.info("응답 성공 [\(httpResponse.statusCode)] \(url.absoluteString)")
